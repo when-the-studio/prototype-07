@@ -271,10 +271,22 @@ fn towers_move(grid: &mut Grid<Cell>) {
 
 fn load_level(level_file: &str) -> std::io::Result<Grid<Cell>> {
 	let level_data = fs::read_to_string(level_file)?;
-	let mut grid: Grid<Cell> = Grid::new(10, 10, Cell { obj: Obj::Empty, groud: Ground::Grass });
+	let grid_h = level_data.split("\n").filter(|x| !x.is_empty()).count();
+	let grid_w = level_data
+		.split("\n")
+		.filter(|x| !x.is_empty())
+		.next()
+		.unwrap()
+		.split(char::is_whitespace)
+		.count();
+	let mut grid: Grid<Cell> = Grid::new(
+		grid_w as i32,
+		grid_h as i32,
+		Cell { obj: Obj::Empty, groud: Ground::Grass },
+	);
 	let mut cells_info = level_data.split(char::is_whitespace);
-	for y in 0..10 {
-		for x in 0..10 {
+	for y in 0..grid.h {
+		for x in 0..grid.w {
 			let hh = cells_info.next().unwrap();
 			let mut cell = grid.get_mut((x, y).into()).unwrap();
 			cell.groud = match hh.chars().nth(0) {
