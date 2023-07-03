@@ -1,3 +1,5 @@
+use std::fs;
+
 use image::GenericImageView;
 
 #[derive(Clone)]
@@ -249,9 +251,10 @@ fn towers_move(grid: &mut Grid<Cell>) {
 	}
 }
 
-fn load_level(level_file: &str) -> Grid<Cell> {
+fn load_level(level_file: &str) -> std::io::Result<Grid<Cell>> {
+	let level_data = fs::read_to_string(level_file)?;
 	let mut grid: Grid<Cell> = Grid::new(10, 10, Cell { obj: Obj::Empty, groud: Ground::Grass });
-	let mut cells_info = level_file.split(char::is_whitespace);
+	let mut cells_info = level_data.split(char::is_whitespace);
 	for y in 0..10 {
 		for x in 0..10 {
 			let hh = cells_info.next().unwrap();
@@ -260,7 +263,7 @@ fn load_level(level_file: &str) -> Grid<Cell> {
 				Some('O') => Ground::Grass,
 				Some('x') => Ground::Water,
 				Some('|') => Ground::Path(-1),
-				_ => unreachable!(),
+				_ => panic!("Ground format incorrect at {x}, {y}"),
 			};
 			cell.obj = match hh.chars().nth(1) {
 				Some('-') => Obj::Empty,
@@ -268,11 +271,11 @@ fn load_level(level_file: &str) -> Grid<Cell> {
 				Some('t') => Obj::Tower,
 				Some('e') => Obj::Enemy { hp: 3, hp_max: 3 },
 				Some('g') => Obj::Goal,
-				_ => unreachable!(),
+				_ => panic!("Object format incorrect at {x}, {y}"),
 			};
 		}
 	}
-	grid
+	Ok(grid)
 }
 
 fn compute_distance(grid: &mut Grid<Cell>) {
@@ -284,7 +287,8 @@ fn compute_distance(grid: &mut Grid<Cell>) {
 				}
 			}
 		}
-		unreachable!()
+		println!("Didn't find a goal on the level");
+		return;
 	};
 	fn update_dist(grid: &mut Grid<Cell>, start: Coords, depth: i32) {
 		let dirs = [(-1, 0), (0, 1), (1, 0), (0, -1)];
@@ -321,8 +325,14 @@ fn main() {
 	env_logger::init();
 	let event_loop = winit::event_loop::EventLoop::new();
 
-	let level_file = include_str!("../levels/test");
-	let mut grid = load_level(level_file);
+	let level_file = "./levels/test";
+	let mut grid = match load_level(level_file) {
+		Ok(grid) => grid,
+		Err(jaaj) => match jaaj.kind() {
+			std::io::ErrorKind::NotFound => panic!("File not found at {level_file}"),
+			_ => panic!("Error while reading level file"),
+		},
+	};
 	// _print_dist(&grid);
 	compute_distance(&mut grid);
 	_print_dist(&grid);
