@@ -366,8 +366,12 @@ fn main() {
 	env_logger::init();
 	let event_loop = winit::event_loop::EventLoop::new();
 
-	let level_file = "./levels/test";
-	let mut grid = match load_level(level_file) {
+	let level_file = if let Some(file_path) = std::env::args().nth(1) {
+		file_path
+	} else {
+		String::from("./levels/test")
+	};
+	let mut grid = match load_level(level_file.as_str()) {
 		Ok(grid) => grid,
 		Err(jaaj) => match jaaj.kind() {
 			std::io::ErrorKind::NotFound => panic!("File not found at {level_file}"),
