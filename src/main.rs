@@ -139,7 +139,12 @@ fn draw_rect(
 	}
 }
 
-fn player_move(grid: &mut Grid<Cell>, (dx, dy): (i32, i32)) {
+enum PlayerAction {
+	Move,
+	PlaceTower,
+}
+
+fn player_move(grid: &mut Grid<Cell>, (dx, dy): (i32, i32), action: PlayerAction) {
 	for y in 0..grid.h {
 		for x in 0..grid.w {
 			if grid
@@ -150,8 +155,15 @@ fn player_move(grid: &mut Grid<Cell>, (dx, dy): (i32, i32)) {
 					.get((x + dx, y + dy).into())
 					.is_some_and(|cell| matches!(cell.obj, Obj::Empty))
 				{
-					grid.get_mut((x, y).into()).unwrap().obj = Obj::Empty;
-					grid.get_mut((x + dx, y + dy).into()).unwrap().obj = Obj::Player;
+					match action {
+						PlayerAction::Move => {
+							grid.get_mut((x, y).into()).unwrap().obj = Obj::Empty;
+							grid.get_mut((x + dx, y + dy).into()).unwrap().obj = Obj::Player;
+						},
+						PlayerAction::PlaceTower => {
+							grid.get_mut((x + dx, y + dy).into()).unwrap().obj = Obj::Tower;
+						},
+					}
 				}
 				return;
 			}
@@ -305,6 +317,8 @@ fn main() {
 
 	let spritesheet = image::load_from_memory(include_bytes!("../assets/spritesheet.png")).unwrap();
 
+	let mut is_ctrl_pressed = false;
+
 	use winit::event::*;
 	event_loop.run(move |event, _, control_flow| match event {
 		Event::WindowEvent { ref event, window_id } if window_id == window.id() => match event {
@@ -319,6 +333,10 @@ fn main() {
 				..
 			} => {
 				*control_flow = winit::event_loop::ControlFlow::Exit;
+			},
+
+			WindowEvent::ModifiersChanged(modifiers) => {
+				is_ctrl_pressed = (*modifiers & ModifiersState::CTRL) == ModifiersState::CTRL;
 			},
 
 			WindowEvent::KeyboardInput {
@@ -339,7 +357,12 @@ fn main() {
 					VirtualKeyCode::Left => (-1, 0),
 					_ => unreachable!(),
 				};
-				player_move(&mut grid, dxdy);
+				let action = if is_ctrl_pressed {
+					PlayerAction::PlaceTower
+				} else {
+					PlayerAction::Move
+				};
+				player_move(&mut grid, dxdy, action);
 				enemies_move(&mut grid);
 				towers_move(&mut grid);
 			},
