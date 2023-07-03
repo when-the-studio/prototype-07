@@ -5,7 +5,7 @@ enum Obj {
 	Empty,
 	Player,
 	Goal,
-	Enemy,
+	Enemy { hp: u32, hp_max: u32 },
 	Tower,
 }
 
@@ -120,6 +120,25 @@ fn draw_sprite(
 	}
 }
 
+fn draw_rect(
+	pixel_buffer: &mut pixels::Pixels,
+	pixel_buffer_size: winit::dpi::PhysicalSize<u32>,
+	dst: Rect,
+	color: [u8; 4],
+) {
+	for y in dst.y..(dst.y + dst.h) {
+		for x in dst.x..(dst.x + dst.w) {
+			if 0 <= x
+				&& x < pixel_buffer_size.width as i32
+				&& 0 <= y && y < pixel_buffer_size.height as i32
+			{
+				let pixel_index = (y * pixel_buffer_size.width as i32 + x) as usize * 4;
+				pixel_buffer.frame_mut()[pixel_index..(pixel_index + 4)].copy_from_slice(&color);
+			}
+		}
+	}
+}
+
 fn player_move(grid: &mut Grid<Cell>, (dx, dy): (i32, i32)) {
 	for y in 0..grid.h {
 		for x in 0..grid.w {
@@ -145,7 +164,7 @@ fn enemies_move(grid: &mut Grid<Cell>) {
 		for x in 0..grid.w {
 			if grid
 				.get((x, y).into())
-				.is_some_and(|cell| matches!(cell.obj, Obj::Enemy))
+				.is_some_and(|cell| matches!(cell.obj, Obj::Enemy { .. }))
 			{
 				let dist_to_goal = if let Ground::Path(dist) = grid.get((x, y).into()).unwrap().groud {
 					dist
@@ -159,8 +178,8 @@ fn enemies_move(grid: &mut Grid<Cell>) {
 							Ground::Path(neighbor_dist) if neighbor_dist < dist_to_goal
 						) && matches!(cell.obj, Obj::Empty)
 					}) {
-						grid.get_mut((x, y).into()).unwrap().obj = Obj::Empty;
-						grid.get_mut((x + dx, y + dy).into()).unwrap().obj = Obj::Enemy;
+						grid.get_mut((x + dx, y + dy).into()).unwrap().obj =
+							std::mem::replace(&mut grid.get_mut((x, y).into()).unwrap().obj, Obj::Empty);
 					}
 				}
 			}
@@ -189,9 +208,19 @@ fn towers_move(grid: &mut Grid<Cell>) {
 						}
 						if grid
 							.get((sx, sy).into())
-							.is_some_and(|cell| matches!(cell.obj, Obj::Enemy))
+							.is_some_and(|cell| matches!(cell.obj, Obj::Enemy { .. }))
 						{
-							grid.get_mut((sx, sy).into()).unwrap().obj = Obj::Empty;
+							let is_dead = if let Obj::Enemy { hp, .. } =
+								&mut grid.get_mut((sx, sy).into()).unwrap().obj
+							{
+								*hp -= 1;
+								*hp == 0
+							} else {
+								unreachable!()
+							};
+							if is_dead {
+								grid.get_mut((sx, sy).into()).unwrap().obj = Obj::Empty;
+							}
 						}
 					}
 				}
@@ -207,8 +236,8 @@ fn main() {
 	let mut grid: Grid<Cell> = Grid::new(10, 10, Cell { obj: Obj::Empty, groud: Ground::Grass });
 	grid.get_mut((4, 2).into()).unwrap().obj = Obj::Player;
 	grid.get_mut((4, 4).into()).unwrap().obj = Obj::Goal;
-	grid.get_mut((5, 1).into()).unwrap().obj = Obj::Tower;
-	grid.get_mut((6, 9).into()).unwrap().obj = Obj::Enemy;
+	grid.get_mut((5, 5).into()).unwrap().obj = Obj::Tower;
+	grid.get_mut((6, 9).into()).unwrap().obj = Obj::Enemy { hp: 3, hp_max: 3 };
 	grid.get_mut((0, 0).into()).unwrap().groud = Ground::Water;
 	grid.get_mut((1, 0).into()).unwrap().groud = Ground::Water;
 	grid.get_mut((9, 0).into()).unwrap().groud = Ground::Water;
@@ -345,7 +374,7 @@ fn main() {
 						Obj::Empty => None,
 						Obj::Player => Some((0, 0)),
 						Obj::Goal => Some((1, 0)),
-						Obj::Enemy => Some((2, 0)),
+						Obj::Enemy { .. } => Some((2, 0)),
 						Obj::Tower => Some((3, 0)),
 					};
 					if let Some(sprite) = sprite {
@@ -357,6 +386,21 @@ fn main() {
 							&spritesheet,
 							sprite_rect,
 						);
+					}
+					if let Obj::Enemy { hp, hp_max } = grid.get((x, y).into()).unwrap().obj {
+						let mut dst = Rect::tile((x, y).into(), cell_pixel_side);
+						dst.y += cell_pixel_side / 8;
+						dst.h = cell_pixel_side / 8;
+						dst.x += cell_pixel_side / 8;
+						dst.w = cell_pixel_side * 6 / 8;
+						draw_rect(
+							&mut pixel_buffer,
+							pixel_buffer_size,
+							dst.clone(),
+							[255, 0, 0, 255],
+						);
+						dst.w = (cell_pixel_side * 6 / 8) * hp as i32 / hp_max as i32;
+						draw_rect(&mut pixel_buffer, pixel_buffer_size, dst, [0, 255, 0, 255]);
 					}
 				}
 			}
