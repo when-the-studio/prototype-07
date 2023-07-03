@@ -18,8 +18,8 @@ struct Grid<T> {
 impl<T: Clone> Grid<T> {
 	fn new(w: i32, h: i32, value: T) -> Grid<T> {
 		Grid {
-			w: 20,
-			h: 20,
+			w,
+			h,
 			content: std::iter::repeat(value).take((w * h) as usize).collect(),
 		}
 	}
@@ -124,13 +124,13 @@ fn main() {
 	env_logger::init();
 	let event_loop = winit::event_loop::EventLoop::new();
 
-	let mut grid: Grid<Cell> = Grid::new(20, 20, Cell::Empty);
+	let mut grid: Grid<Cell> = Grid::new(10, 10, Cell::Empty);
 	*grid.get_mut((4, 2).into()).unwrap() = Cell::Player;
 	*grid.get_mut((4, 4).into()).unwrap() = Cell::Goal;
 	*grid.get_mut((5, 5).into()).unwrap() = Cell::Tower;
 	*grid.get_mut((6, 8).into()).unwrap() = Cell::Enemy;
 
-	let cell_pixel_side = 8 * 4;
+	let cell_pixel_side = 8 * 8;
 
 	let window = winit::window::WindowBuilder::new()
 		.with_title("Prototype 7")
