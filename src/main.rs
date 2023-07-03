@@ -1,12 +1,25 @@
 use image::GenericImageView;
 
 #[derive(Clone)]
-enum Cell {
+enum Obj {
 	Empty,
 	Player,
 	Goal,
 	Enemy,
 	Tower,
+}
+
+#[derive(Clone)]
+enum Ground {
+	Grass,
+	Water,
+	Path(i32), // contains distance to objective
+}
+
+#[derive(Clone)]
+struct Cell {
+	obj: Obj,
+	groud: Ground,
 }
 
 struct Grid<T> {
@@ -55,6 +68,7 @@ impl From<(i32, i32)> for Coords {
 	}
 }
 
+#[derive(Clone)]
 struct Rect {
 	x: i32,
 	y: i32,
@@ -109,10 +123,16 @@ fn draw_sprite(
 fn player_move(grid: &mut Grid<Cell>, (dx, dy): (i32, i32)) {
 	for y in 0..grid.h {
 		for x in 0..grid.w {
-			if matches!(grid.get((x, y).into()), Some(Cell::Player)) {
-				if matches!(grid.get((x + dx, y + dy).into()), Some(Cell::Empty)) {
-					*grid.get_mut((x, y).into()).unwrap() = Cell::Empty;
-					*grid.get_mut((x + dx, y + dy).into()).unwrap() = Cell::Player;
+			if grid
+				.get((x, y).into())
+				.is_some_and(|cell| matches!(cell.obj, Obj::Player))
+			{
+				if grid
+					.get((x + dx, y + dy).into())
+					.is_some_and(|cell| matches!(cell.obj, Obj::Empty))
+				{
+					grid.get_mut((x, y).into()).unwrap().obj = Obj::Empty;
+					grid.get_mut((x + dx, y + dy).into()).unwrap().obj = Obj::Player;
 				}
 				return;
 			}
@@ -124,11 +144,23 @@ fn main() {
 	env_logger::init();
 	let event_loop = winit::event_loop::EventLoop::new();
 
-	let mut grid: Grid<Cell> = Grid::new(10, 10, Cell::Empty);
-	*grid.get_mut((4, 2).into()).unwrap() = Cell::Player;
-	*grid.get_mut((4, 4).into()).unwrap() = Cell::Goal;
-	*grid.get_mut((5, 5).into()).unwrap() = Cell::Tower;
-	*grid.get_mut((6, 8).into()).unwrap() = Cell::Enemy;
+	let mut grid: Grid<Cell> = Grid::new(10, 10, Cell { obj: Obj::Empty, groud: Ground::Grass });
+	grid.get_mut((4, 2).into()).unwrap().obj = Obj::Player;
+	grid.get_mut((4, 4).into()).unwrap().obj = Obj::Goal;
+	grid.get_mut((5, 5).into()).unwrap().obj = Obj::Tower;
+	grid.get_mut((6, 9).into()).unwrap().obj = Obj::Enemy;
+	grid.get_mut((0, 0).into()).unwrap().groud = Ground::Water;
+	grid.get_mut((1, 0).into()).unwrap().groud = Ground::Water;
+	grid.get_mut((9, 0).into()).unwrap().groud = Ground::Water;
+
+	grid.get_mut((4, 4).into()).unwrap().groud = Ground::Path(0);
+	grid.get_mut((4, 5).into()).unwrap().groud = Ground::Path(1);
+	grid.get_mut((4, 6).into()).unwrap().groud = Ground::Path(2);
+	grid.get_mut((4, 7).into()).unwrap().groud = Ground::Path(3);
+	grid.get_mut((5, 7).into()).unwrap().groud = Ground::Path(4);
+	grid.get_mut((6, 7).into()).unwrap().groud = Ground::Path(5);
+	grid.get_mut((6, 8).into()).unwrap().groud = Ground::Path(6);
+	grid.get_mut((6, 9).into()).unwrap().groud = Ground::Path(7);
 
 	let cell_pixel_side = 8 * 8;
 
@@ -233,16 +265,29 @@ fn main() {
 
 			for y in 0..grid.h {
 				for x in 0..grid.w {
-					let sprite = match grid.get((x, y).into()).unwrap() {
-						Cell::Empty => None,
-						Cell::Player => Some((0, 0)),
-						Cell::Goal => Some((1, 0)),
-						Cell::Enemy => Some((2, 0)),
-						Cell::Tower => Some((3, 0)),
+					let dst = Rect::tile((x, y).into(), cell_pixel_side);
+					let sprite = match grid.get((x, y).into()).unwrap().groud {
+						Ground::Grass => (5, 0),
+						Ground::Water => (6, 0),
+						Ground::Path(_) => (7, 0),
+					};
+					let sprite_rect = Rect::tile(sprite.into(), 8);
+					draw_sprite(
+						&mut pixel_buffer,
+						pixel_buffer_size,
+						dst.clone(),
+						&spritesheet,
+						sprite_rect,
+					);
+					let sprite = match grid.get((x, y).into()).unwrap().obj {
+						Obj::Empty => None,
+						Obj::Player => Some((0, 0)),
+						Obj::Goal => Some((1, 0)),
+						Obj::Enemy => Some((2, 0)),
+						Obj::Tower => Some((3, 0)),
 					};
 					if let Some(sprite) = sprite {
 						let sprite_rect = Rect::tile(sprite.into(), 8);
-						let dst = Rect::tile((x, y).into(), cell_pixel_side);
 						draw_sprite(
 							&mut pixel_buffer,
 							pixel_buffer_size,
