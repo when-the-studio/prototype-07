@@ -184,31 +184,44 @@ fn player_move(grid: &mut Grid<Cell>, (dx, dy): (i32, i32), action: PlayerAction
 
 fn enemies_move(grid: &mut Grid<Cell>) {
 	let mut new_grid = grid.clone();
-	for y in 0..grid.h {
-		for x in 0..grid.w {
-			if grid
-				.get((x, y).into())
-				.is_some_and(|cell| matches!(cell.obj, Obj::Enemy { .. }))
-			{
+
+	for dist in 0..(grid.h * grid.w) {
+		let mut found_one = false;
+		for y in 0..grid.h {
+			for x in 0..grid.w {
 				let dist_to_goal = if let Ground::Path(dist) = grid.get((x, y).into()).unwrap().groud {
-					dist
+					found_one = true;
+					Some(dist)
 				} else {
-					panic!("we thought we were on a path!? >.<")
+					None
 				};
-				for (dx, dy) in [(0, -1), (1, 0), (0, 1), (-1, 0)] {
-					if new_grid.get((x + dx, y + dy).into()).is_some_and(|cell| {
-						matches!(
-							cell.groud,
-							Ground::Path(neighbor_dist) if neighbor_dist < dist_to_goal
-						) && matches!(cell.obj, Obj::Empty | Obj::Goal)
-					}) {
-						new_grid.get_mut((x + dx, y + dy).into()).unwrap().obj = std::mem::replace(
-							&mut new_grid.get_mut((x, y).into()).unwrap().obj,
-							Obj::Empty,
-						);
+				if grid
+					.get((x, y).into())
+					.is_some_and(|cell| matches!(cell.obj, Obj::Enemy { .. }))
+				{
+					let dist_to_goal = dist_to_goal.expect("we thought we were on a path!? >.<");
+					if dist_to_goal != dist {
+						continue;
+					}
+					for (dx, dy) in [(0, -1), (1, 0), (0, 1), (-1, 0)] {
+						if new_grid.get((x + dx, y + dy).into()).is_some_and(|cell| {
+							matches!(
+								cell.groud,
+								Ground::Path(neighbor_dist) if neighbor_dist < dist_to_goal
+							) && matches!(cell.obj, Obj::Empty | Obj::Goal)
+						}) {
+							new_grid.get_mut((x + dx, y + dy).into()).unwrap().obj = std::mem::replace(
+								&mut new_grid.get_mut((x, y).into()).unwrap().obj,
+								Obj::Empty,
+							);
+						}
 					}
 				}
 			}
+		}
+		// Didn't find any tile with distance d, stops iterating
+		if !found_one {
+			break;
 		}
 	}
 	*grid = new_grid;
