@@ -140,6 +140,35 @@ fn player_move(grid: &mut Grid<Cell>, (dx, dy): (i32, i32)) {
 	}
 }
 
+fn enemies_move(grid: &mut Grid<Cell>) {
+	for y in 0..grid.h {
+		for x in 0..grid.w {
+			if grid
+				.get((x, y).into())
+				.is_some_and(|cell| matches!(cell.obj, Obj::Enemy))
+			{
+				let dist_to_goal = if let Ground::Path(dist) = grid.get((x, y).into()).unwrap().groud {
+					dist
+				} else {
+					panic!("we thought we were on a path!? >.<")
+				};
+				for (dx, dy) in [(0, -1), (1, 0), (0, 1), (-1, 0)] {
+					if grid.get((x + dx, y + dy).into()).is_some_and(|cell| {
+						matches!(
+							cell.groud,
+							Ground::Path(neighbor_dist) if neighbor_dist < dist_to_goal
+						) && matches!(cell.obj, Obj::Empty)
+					}) {
+						grid.get_mut((x, y).into()).unwrap().obj = Obj::Empty;
+						grid.get_mut((x + dx, y + dy).into()).unwrap().obj = Obj::Enemy;
+					}
+				}
+				return;
+			}
+		}
+	}
+}
+
 fn main() {
 	env_logger::init();
 	let event_loop = winit::event_loop::EventLoop::new();
@@ -251,6 +280,7 @@ fn main() {
 					_ => unreachable!(),
 				};
 				player_move(&mut grid, dxdy);
+				enemies_move(&mut grid);
 			},
 
 			_ => {},
