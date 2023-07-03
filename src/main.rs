@@ -10,6 +10,7 @@ enum Obj {
 	Enemy { hp: u32, hp_max: u32 },
 	Tower,
 	Rock,
+	Tree,
 }
 
 #[derive(Clone)]
@@ -240,12 +241,6 @@ fn towers_move(grid: &mut Grid<Cell>) {
 					loop {
 						sx += dx;
 						sy += dy;
-						if grid.get((sx, sy).into()).is_none()
-							|| grid.get((sx, sy).into()).is_some_and(|cell| {
-								matches!(cell.obj, Obj::Player | Obj::Goal | Obj::Tower | Obj::Rock)
-							}) {
-							break;
-						}
 						if grid
 							.get((sx, sy).into())
 							.is_some_and(|cell| matches!(cell.obj, Obj::Enemy { .. }))
@@ -263,6 +258,13 @@ fn towers_move(grid: &mut Grid<Cell>) {
 							}
 							break;
 						}
+						if grid.get((sx, sy).into()).is_none()
+							|| grid
+								.get((sx, sy).into())
+								.is_some_and(|cell| !matches!(cell.obj, Obj::Empty))
+						{
+							break;
+						}
 					}
 				}
 			}
@@ -272,11 +274,10 @@ fn towers_move(grid: &mut Grid<Cell>) {
 
 fn load_level(level_file: &str) -> std::io::Result<Grid<Cell>> {
 	let level_data = fs::read_to_string(level_file)?;
-	let grid_h = level_data.split("\n").filter(|x| !x.is_empty()).count();
+	let grid_h = level_data.split('\n').filter(|x| !x.is_empty()).count();
 	let grid_w = level_data
-		.split("\n")
-		.filter(|x| !x.is_empty())
-		.next()
+		.split('\n')
+		.find(|x| !x.is_empty())
 		.unwrap()
 		.split(char::is_whitespace)
 		.count();
@@ -290,7 +291,7 @@ fn load_level(level_file: &str) -> std::io::Result<Grid<Cell>> {
 		for x in 0..grid.w {
 			let hh = cells_info.next().unwrap();
 			let mut cell = grid.get_mut((x, y).into()).unwrap();
-			cell.groud = match hh.chars().nth(0) {
+			cell.groud = match hh.chars().next() {
 				Some('O') => Ground::Grass,
 				Some('x') => Ground::Water,
 				Some('|') => Ground::Path(-1),
@@ -303,6 +304,7 @@ fn load_level(level_file: &str) -> std::io::Result<Grid<Cell>> {
 				Some('e') => Obj::Enemy { hp: 3, hp_max: 3 },
 				Some('g') => Obj::Goal,
 				Some('r') => Obj::Rock,
+				Some('T') => Obj::Tree,
 				_ => panic!("Object format incorrect at {x}, {y}"),
 			};
 		}
@@ -523,6 +525,7 @@ fn main() {
 						Obj::Enemy { .. } => Some((2, 0)),
 						Obj::Tower => Some((3, 0)),
 						Obj::Rock => Some((8, 0)),
+						Obj::Tree => Some((9, 0)),
 					};
 					if let Some(sprite) = sprite {
 						let sprite_rect = Rect::tile(sprite.into(), 8);
@@ -555,7 +558,7 @@ fn main() {
 				draw_sprite(
 					&mut pixel_buffer,
 					pixel_buffer_size,
-					Rect { x: 1 * 8 * 8, y: 2 * 8 * 8, w: 8 * 7 * 8, h: 8 * 8 },
+					Rect { x: 8 * 8, y: 2 * 8 * 8, w: 8 * 7 * 8, h: 8 * 8 },
 					&spritesheet,
 					Rect { x: 0, y: 8, w: 8 * 7, h: 8 },
 				);
