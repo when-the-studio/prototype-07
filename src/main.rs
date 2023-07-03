@@ -261,6 +261,7 @@ fn towers_move(grid: &mut Grid<Cell>) {
 							if is_dead {
 								grid.get_mut((sx, sy).into()).unwrap().obj = Obj::Empty;
 							}
+							break;
 						}
 					}
 				}
