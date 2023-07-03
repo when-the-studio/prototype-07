@@ -57,6 +57,7 @@ impl<T> Grid<T> {
 	}
 }
 
+#[derive(Clone, Copy)]
 struct Coords {
 	x: i32,
 	y: i32,
@@ -65,6 +66,13 @@ struct Coords {
 impl From<(i32, i32)> for Coords {
 	fn from((x, y): (i32, i32)) -> Coords {
 		Coords { x, y }
+	}
+}
+
+impl std::ops::Add for Coords {
+	type Output = Coords;
+	fn add(self, rhs: Self) -> Self::Output {
+		(self.x + rhs.x, self.y + rhs.y).into()
 	}
 }
 
@@ -241,27 +249,83 @@ fn towers_move(grid: &mut Grid<Cell>) {
 	}
 }
 
+fn load_level(level_file: &str) -> Grid<Cell> {
+	let mut grid: Grid<Cell> = Grid::new(10, 10, Cell { obj: Obj::Empty, groud: Ground::Grass });
+	let mut cells_info = level_file.split(char::is_whitespace);
+	for y in 0..10 {
+		for x in 0..10 {
+			let hh = cells_info.next().unwrap();
+			let mut cell = grid.get_mut((x, y).into()).unwrap();
+			cell.groud = match hh.chars().nth(0) {
+				Some('O') => Ground::Grass,
+				Some('x') => Ground::Water,
+				Some('|') => Ground::Path(-1),
+				_ => unreachable!(),
+			};
+			cell.obj = match hh.chars().nth(1) {
+				Some('-') => Obj::Empty,
+				Some('p') => Obj::Player,
+				Some('t') => Obj::Tower,
+				Some('e') => Obj::Enemy { hp: 3, hp_max: 3 },
+				Some('g') => Obj::Goal,
+				_ => unreachable!(),
+			};
+		}
+	}
+	grid
+}
+
+fn compute_distance(grid: &mut Grid<Cell>) {
+	let goal = 'goal_find: {
+		for x in 0..grid.w {
+			for y in 0..grid.h {
+				if matches!(grid.get((x, y).into()).unwrap().obj, Obj::Goal) {
+					break 'goal_find (x, y);
+				}
+			}
+		}
+		unreachable!()
+	};
+	fn update_dist(grid: &mut Grid<Cell>, start: Coords, depth: i32) {
+		let dirs = [(-1, 0), (0, 1), (1, 0), (0, -1)];
+		grid.get_mut(start).unwrap().groud = Ground::Path(depth);
+		for d in dirs {
+			let dst = start + d.into();
+			if grid.get(dst).is_none() {
+				continue;
+			}
+			if let Ground::Path(dist) = grid.get(dst).unwrap().groud {
+				if dist == -1 || dist > depth {
+					update_dist(grid, dst, depth + 1);
+				}
+			}
+		}
+	}
+	update_dist(grid, goal.into(), 0);
+}
+
+fn _print_dist(grid: &Grid<Cell>) {
+	for y in 0..grid.h {
+		for x in 0..grid.w {
+			match grid.get((x, y).into()).unwrap().groud {
+				Ground::Path(d) => print!("{d:2} "),
+				_ => print!(" - "),
+			}
+		}
+		println!();
+	}
+	println!();
+}
+
 fn main() {
 	env_logger::init();
 	let event_loop = winit::event_loop::EventLoop::new();
 
-	let mut grid: Grid<Cell> = Grid::new(10, 10, Cell { obj: Obj::Empty, groud: Ground::Grass });
-	grid.get_mut((4, 2).into()).unwrap().obj = Obj::Player;
-	grid.get_mut((4, 4).into()).unwrap().obj = Obj::Goal;
-	grid.get_mut((5, 5).into()).unwrap().obj = Obj::Tower;
-	grid.get_mut((6, 9).into()).unwrap().obj = Obj::Enemy { hp: 3, hp_max: 3 };
-	grid.get_mut((0, 0).into()).unwrap().groud = Ground::Water;
-	grid.get_mut((1, 0).into()).unwrap().groud = Ground::Water;
-	grid.get_mut((9, 0).into()).unwrap().groud = Ground::Water;
-
-	grid.get_mut((4, 4).into()).unwrap().groud = Ground::Path(0);
-	grid.get_mut((4, 5).into()).unwrap().groud = Ground::Path(1);
-	grid.get_mut((4, 6).into()).unwrap().groud = Ground::Path(2);
-	grid.get_mut((4, 7).into()).unwrap().groud = Ground::Path(3);
-	grid.get_mut((5, 7).into()).unwrap().groud = Ground::Path(4);
-	grid.get_mut((6, 7).into()).unwrap().groud = Ground::Path(5);
-	grid.get_mut((6, 8).into()).unwrap().groud = Ground::Path(6);
-	grid.get_mut((6, 9).into()).unwrap().groud = Ground::Path(7);
+	let level_file = include_str!("../levels/test");
+	let mut grid = load_level(level_file);
+	// _print_dist(&grid);
+	compute_distance(&mut grid);
+	_print_dist(&grid);
 
 	let cell_pixel_side = 8 * 8;
 
