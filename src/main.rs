@@ -163,7 +163,38 @@ fn enemies_move(grid: &mut Grid<Cell>) {
 						grid.get_mut((x + dx, y + dy).into()).unwrap().obj = Obj::Enemy;
 					}
 				}
-				return;
+			}
+		}
+	}
+}
+
+fn towers_move(grid: &mut Grid<Cell>) {
+	for y in 0..grid.h {
+		for x in 0..grid.w {
+			if grid
+				.get((x, y).into())
+				.is_some_and(|cell| matches!(cell.obj, Obj::Tower))
+			{
+				for (dx, dy) in [(0, -1), (1, 0), (0, 1), (-1, 0)] {
+					let mut sx = x;
+					let mut sy = y;
+					loop {
+						sx += dx;
+						sy += dy;
+						if grid.get((sx, sy).into()).is_none()
+							|| grid.get((sx, sy).into()).is_some_and(|cell| {
+								matches!(cell.obj, Obj::Player | Obj::Goal | Obj::Tower)
+							}) {
+							break;
+						}
+						if grid
+							.get((sx, sy).into())
+							.is_some_and(|cell| matches!(cell.obj, Obj::Enemy))
+						{
+							grid.get_mut((sx, sy).into()).unwrap().obj = Obj::Empty;
+						}
+					}
+				}
 			}
 		}
 	}
@@ -176,7 +207,7 @@ fn main() {
 	let mut grid: Grid<Cell> = Grid::new(10, 10, Cell { obj: Obj::Empty, groud: Ground::Grass });
 	grid.get_mut((4, 2).into()).unwrap().obj = Obj::Player;
 	grid.get_mut((4, 4).into()).unwrap().obj = Obj::Goal;
-	grid.get_mut((5, 5).into()).unwrap().obj = Obj::Tower;
+	grid.get_mut((5, 1).into()).unwrap().obj = Obj::Tower;
 	grid.get_mut((6, 9).into()).unwrap().obj = Obj::Enemy;
 	grid.get_mut((0, 0).into()).unwrap().groud = Ground::Water;
 	grid.get_mut((1, 0).into()).unwrap().groud = Ground::Water;
@@ -233,7 +264,7 @@ fn main() {
 		}
 	};
 
-	let mut pixel_buffer_size = window.inner_size();
+	let pixel_buffer_size = window.inner_size();
 	let mut pixel_buffer = {
 		let size = pixel_buffer_size;
 		let surface_texture = pixels::SurfaceTexture::new(size.width, size.height, &window);
@@ -281,6 +312,7 @@ fn main() {
 				};
 				player_move(&mut grid, dxdy);
 				enemies_move(&mut grid);
+				towers_move(&mut grid);
 			},
 
 			_ => {},
