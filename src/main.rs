@@ -9,6 +9,7 @@ enum Obj {
 	Goal,
 	Enemy { hp: u32, hp_max: u32 },
 	Tower,
+	Rock,
 }
 
 #[derive(Clone)]
@@ -24,6 +25,7 @@ struct Cell {
 	groud: Ground,
 }
 
+#[derive(Clone)]
 struct Grid<T> {
 	w: i32,
 	h: i32,
@@ -161,10 +163,9 @@ fn player_move(grid: &mut Grid<Cell>, (dx, dy): (i32, i32), action: PlayerAction
 				.get((x, y).into())
 				.is_some_and(|cell| matches!(cell.obj, Obj::Player))
 			{
-				if grid
-					.get((x + dx, y + dy).into())
-					.is_some_and(|cell| matches!(cell.obj, Obj::Empty))
-				{
+				if grid.get((x + dx, y + dy).into()).is_some_and(|cell| {
+					matches!(cell.obj, Obj::Empty) && !matches!(cell.groud, Ground::Water)
+				}) {
 					match action {
 						PlayerAction::Move => {
 							grid.get_mut((x, y).into()).unwrap().obj = Obj::Empty;
@@ -182,6 +183,7 @@ fn player_move(grid: &mut Grid<Cell>, (dx, dy): (i32, i32), action: PlayerAction
 }
 
 fn enemies_move(grid: &mut Grid<Cell>) {
+	let mut new_grid = grid.clone();
 	for y in 0..grid.h {
 		for x in 0..grid.w {
 			if grid
@@ -194,19 +196,22 @@ fn enemies_move(grid: &mut Grid<Cell>) {
 					panic!("we thought we were on a path!? >.<")
 				};
 				for (dx, dy) in [(0, -1), (1, 0), (0, 1), (-1, 0)] {
-					if grid.get((x + dx, y + dy).into()).is_some_and(|cell| {
+					if new_grid.get((x + dx, y + dy).into()).is_some_and(|cell| {
 						matches!(
 							cell.groud,
 							Ground::Path(neighbor_dist) if neighbor_dist < dist_to_goal
-						) && matches!(cell.obj, Obj::Empty)
+						) && matches!(cell.obj, Obj::Empty | Obj::Goal)
 					}) {
-						grid.get_mut((x + dx, y + dy).into()).unwrap().obj =
-							std::mem::replace(&mut grid.get_mut((x, y).into()).unwrap().obj, Obj::Empty);
+						new_grid.get_mut((x + dx, y + dy).into()).unwrap().obj = std::mem::replace(
+							&mut new_grid.get_mut((x, y).into()).unwrap().obj,
+							Obj::Empty,
+						);
 					}
 				}
 			}
 		}
 	}
+	*grid = new_grid;
 }
 
 fn towers_move(grid: &mut Grid<Cell>) {
@@ -224,7 +229,7 @@ fn towers_move(grid: &mut Grid<Cell>) {
 						sy += dy;
 						if grid.get((sx, sy).into()).is_none()
 							|| grid.get((sx, sy).into()).is_some_and(|cell| {
-								matches!(cell.obj, Obj::Player | Obj::Goal | Obj::Tower)
+								matches!(cell.obj, Obj::Player | Obj::Goal | Obj::Tower | Obj::Rock)
 							}) {
 							break;
 						}
@@ -271,6 +276,7 @@ fn load_level(level_file: &str) -> std::io::Result<Grid<Cell>> {
 				Some('t') => Obj::Tower,
 				Some('e') => Obj::Enemy { hp: 3, hp_max: 3 },
 				Some('g') => Obj::Goal,
+				Some('r') => Obj::Rock,
 				_ => panic!("Object format incorrect at {x}, {y}"),
 			};
 		}
@@ -321,6 +327,16 @@ fn _print_dist(grid: &Grid<Cell>) {
 	println!();
 }
 
+fn is_game_joever(grid: &Grid<Cell>) -> bool {
+	for x in 0..grid.w {
+		for y in 0..grid.h {
+			if matches!(grid.get((x, y).into()).unwrap().obj, Obj::Goal) {
+				return false;
+			}
+		}
+	}
+	true
+}
 fn main() {
 	env_logger::init();
 	let event_loop = winit::event_loop::EventLoop::new();
@@ -392,7 +408,7 @@ fn main() {
 	let spritesheet = image::load_from_memory(include_bytes!("../assets/spritesheet.png")).unwrap();
 
 	let mut is_ctrl_pressed = false;
-
+	let mut its_joever = false;
 	use winit::event::*;
 	event_loop.run(move |event, _, control_flow| match event {
 		Event::WindowEvent { ref event, window_id } if window_id == window.id() => match event {
@@ -437,8 +453,11 @@ fn main() {
 					PlayerAction::Move
 				};
 				player_move(&mut grid, dxdy, action);
-				enemies_move(&mut grid);
-				towers_move(&mut grid);
+				if !its_joever {
+					enemies_move(&mut grid);
+					its_joever = is_game_joever(&grid);
+					towers_move(&mut grid);
+				}
 			},
 
 			_ => {},
@@ -473,6 +492,7 @@ fn main() {
 						Obj::Goal => Some((1, 0)),
 						Obj::Enemy { .. } => Some((2, 0)),
 						Obj::Tower => Some((3, 0)),
+						Obj::Rock => Some((8, 0)),
 					};
 					if let Some(sprite) = sprite {
 						let sprite_rect = Rect::tile(sprite.into(), 8);
@@ -501,7 +521,15 @@ fn main() {
 					}
 				}
 			}
-
+			if its_joever {
+				draw_sprite(
+					&mut pixel_buffer,
+					pixel_buffer_size,
+					Rect { x: 1 * 8 * 8, y: 2 * 8 * 8, w: 8 * 7 * 8, h: 8 * 8 },
+					&spritesheet,
+					Rect { x: 0, y: 8, w: 8 * 7, h: 8 },
+				);
+			}
 			window.request_redraw();
 		},
 
