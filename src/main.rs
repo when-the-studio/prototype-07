@@ -164,7 +164,9 @@ fn try_push(grid: &mut Grid<Cell>, coords: Coords, (dx, dy): (i32, i32)) {
 			.get(dst_coords)
 			.is_some_and(|cell| matches!(cell.obj, Obj::Empty))
 		{
-			grid.get_mut(dst_coords).unwrap().obj = obj;
+			if !matches!(grid.get(dst_coords).unwrap().groud, Ground::Water) {
+				grid.get_mut(dst_coords).unwrap().obj = obj;
+			}
 			grid.get_mut(coords).unwrap().obj = Obj::Empty;
 		}
 	}
