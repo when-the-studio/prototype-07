@@ -152,6 +152,24 @@ fn draw_rect(
 	}
 }
 
+fn try_push(grid: &mut Grid<Cell>, coords: Coords, (dx, dy): (i32, i32)) {
+	if grid.get(coords).is_none() {
+		return;
+	}
+	let obj = grid.get(coords).unwrap().obj.clone();
+	if matches!(obj, Obj::Rock | Obj::Tower) {
+		let dst_coords = coords + (dx, dy).into();
+		try_push(grid, dst_coords, (dx, dy));
+		if grid
+			.get(dst_coords)
+			.is_some_and(|cell| matches!(cell.obj, Obj::Empty))
+		{
+			grid.get_mut(dst_coords).unwrap().obj = obj;
+			grid.get_mut(coords).unwrap().obj = Obj::Empty;
+		}
+	}
+}
+
 enum PlayerAction {
 	Move,
 	PlaceTower,
@@ -164,18 +182,28 @@ fn player_move(grid: &mut Grid<Cell>, (dx, dy): (i32, i32), action: PlayerAction
 				.get((x, y).into())
 				.is_some_and(|cell| matches!(cell.obj, Obj::Player))
 			{
-				if grid.get((x + dx, y + dy).into()).is_some_and(|cell| {
-					matches!(cell.obj, Obj::Empty) && !matches!(cell.groud, Ground::Water)
-				}) {
-					match action {
-						PlayerAction::Move => {
-							grid.get_mut((x, y).into()).unwrap().obj = Obj::Empty;
-							grid.get_mut((x + dx, y + dy).into()).unwrap().obj = Obj::Player;
-						},
-						PlayerAction::PlaceTower => {
+				match action {
+					PlayerAction::Move => {
+						if grid
+							.get((x + dx, y + dy).into())
+							.is_some_and(|cell| !matches!(cell.groud, Ground::Water))
+						{
+							if !matches!(grid.get((x + dx, y + dy).into()).unwrap().obj, Obj::Empty) {
+								try_push(grid, (x + dx, y + dy).into(), (dx, dy));
+							}
+							if matches!(grid.get((x + dx, y + dy).into()).unwrap().obj, Obj::Empty) {
+								grid.get_mut((x, y).into()).unwrap().obj = Obj::Empty;
+								grid.get_mut((x + dx, y + dy).into()).unwrap().obj = Obj::Player;
+							}
+						}
+					},
+					PlayerAction::PlaceTower => {
+						if grid.get((x + dx, y + dy).into()).is_some_and(|cell| {
+							matches!(cell.obj, Obj::Empty) && !matches!(cell.groud, Ground::Water)
+						}) {
 							grid.get_mut((x + dx, y + dy).into()).unwrap().obj = Obj::Tower;
-						},
-					}
+						}
+					},
 				}
 				return;
 			}
@@ -209,12 +237,24 @@ fn enemies_move(grid: &mut Grid<Cell>) {
 							matches!(
 								cell.groud,
 								Ground::Path(neighbor_dist) if neighbor_dist < dist_to_goal
-							) && matches!(cell.obj, Obj::Empty | Obj::Goal | Obj::Tower)
+							) && matches!(cell.obj, Obj::Empty | Obj::Goal | Obj::Tower | Obj::Rock)
 						}) {
-							new_grid.get_mut((x + dx, y + dy).into()).unwrap().obj = std::mem::replace(
-								&mut new_grid.get_mut((x, y).into()).unwrap().obj,
-								Obj::Empty,
-							);
+							if matches!(
+								new_grid.get_mut((x + dx, y + dy).into()).unwrap().obj,
+								Obj::Rock
+							) {
+								try_push(&mut new_grid, (x + dx, y + dy).into(), (dx, dy));
+							}
+							if !matches!(
+								new_grid.get_mut((x + dx, y + dy).into()).unwrap().obj,
+								Obj::Rock
+							) {
+								new_grid.get_mut((x + dx, y + dy).into()).unwrap().obj = std::mem::replace(
+									&mut new_grid.get_mut((x, y).into()).unwrap().obj,
+									Obj::Empty,
+								);
+							}
+							break;
 						}
 					}
 				}
