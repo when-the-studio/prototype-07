@@ -209,7 +209,7 @@ fn enemies_move(grid: &mut Grid<Cell>) {
 							matches!(
 								cell.groud,
 								Ground::Path(neighbor_dist) if neighbor_dist < dist_to_goal
-							) && matches!(cell.obj, Obj::Empty | Obj::Goal)
+							) && matches!(cell.obj, Obj::Empty | Obj::Goal | Obj::Tower)
 						}) {
 							new_grid.get_mut((x + dx, y + dy).into()).unwrap().obj = std::mem::replace(
 								&mut new_grid.get_mut((x, y).into()).unwrap().obj,
