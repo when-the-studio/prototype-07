@@ -173,6 +173,7 @@ fn try_push(grid: &mut Grid<Cell>, coords: Coords, (dx, dy): (i32, i32)) {
 enum PlayerAction {
 	Move,
 	PlaceTower,
+	SkipTurn,
 }
 
 fn player_move(grid: &mut Grid<Cell>, (dx, dy): (i32, i32), action: PlayerAction) {
@@ -204,6 +205,7 @@ fn player_move(grid: &mut Grid<Cell>, (dx, dy): (i32, i32), action: PlayerAction
 							grid.get_mut((x + dx, y + dy).into()).unwrap().obj = Obj::Tower;
 						}
 					},
+					PlayerAction::SkipTurn => {},
 				}
 				return;
 			}
@@ -510,19 +512,24 @@ fn main() {
 					| VirtualKeyCode::Right
 					| VirtualKeyCode::Down
 					| VirtualKeyCode::Left
+					| VirtualKeyCode::Space
 			) =>
 			{
+				let mut action = if is_ctrl_pressed {
+					PlayerAction::PlaceTower
+				} else {
+					PlayerAction::Move
+				};
 				let dxdy = match key {
 					VirtualKeyCode::Up => (0, -1),
 					VirtualKeyCode::Right => (1, 0),
 					VirtualKeyCode::Down => (0, 1),
 					VirtualKeyCode::Left => (-1, 0),
+					VirtualKeyCode::Space => {
+						action = PlayerAction::SkipTurn;
+						(0, 0)
+					},
 					_ => unreachable!(),
-				};
-				let action = if is_ctrl_pressed {
-					PlayerAction::PlaceTower
-				} else {
-					PlayerAction::Move
 				};
 				player_move(&mut grid, dxdy, action);
 				if !its_joever {
