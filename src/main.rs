@@ -1,6 +1,6 @@
-use std::fs;
-
+use core::panic;
 use image::GenericImageView;
+use std::fs;
 
 #[derive(Clone)]
 enum Obj {
@@ -60,6 +60,22 @@ impl<T> Grid<T> {
 			None
 		}
 	}
+}
+
+struct LevelData {
+	init_grid: Grid<Cell>,
+	max_towers: Option<u32>,
+}
+
+impl LevelData {
+	fn new(grid: Grid<Cell>) -> LevelData {
+		LevelData { init_grid: grid, max_towers: None }
+	}
+}
+struct LevelState {
+	grid: Grid<Cell>,
+	towers: u32,
+	game_joever: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -316,12 +332,13 @@ fn towers_move(grid: &mut Grid<Cell>) {
 	}
 }
 
-fn load_level(level_file: &str) -> std::io::Result<Grid<Cell>> {
-	let level_data = fs::read_to_string(level_file)?;
-	let grid_h = level_data.split('\n').filter(|x| !x.is_empty()).count();
-	let grid_w = level_data
+fn load_level(level_file: &str) -> std::io::Result<LevelData> {
+	let level_raw_data = fs::read_to_string(level_file)?;
+	let filt = |x: &&str| !x.is_empty() && !x.starts_with('@');
+	let grid_h = level_raw_data.split('\n').filter(filt).count();
+	let grid_w = level_raw_data
 		.split('\n')
-		.find(|x| !x.is_empty())
+		.find(filt)
 		.unwrap()
 		.split(char::is_whitespace)
 		.count();
@@ -330,18 +347,18 @@ fn load_level(level_file: &str) -> std::io::Result<Grid<Cell>> {
 		grid_h as i32,
 		Cell { obj: Obj::Empty, groud: Ground::Grass },
 	);
-	let mut cells_info = level_data.split(char::is_whitespace);
+	let mut cells_info = level_raw_data.split(char::is_whitespace);
 	for y in 0..grid.h {
 		for x in 0..grid.w {
-			let hh = cells_info.next().unwrap();
+			let current_tile = cells_info.next().unwrap();
 			let mut cell = grid.get_mut((x, y).into()).unwrap();
-			cell.groud = match hh.chars().next() {
+			cell.groud = match current_tile.chars().next() {
 				Some('O') => Ground::Grass,
 				Some('x') => Ground::Water,
 				Some('|') => Ground::Path(-1),
 				_ => panic!("Ground format incorrect at {x}, {y}"),
 			};
-			cell.obj = match hh.chars().nth(1) {
+			cell.obj = match current_tile.chars().nth(1) {
 				Some('-') => Obj::Empty,
 				Some('p') => Obj::Player,
 				Some('t') => Obj::Tower,
@@ -353,7 +370,19 @@ fn load_level(level_file: &str) -> std::io::Result<Grid<Cell>> {
 			};
 		}
 	}
-	Ok(grid)
+	let mut level_data = LevelData::new(grid);
+	let meta_data = level_raw_data
+		.split('\n')
+		.filter_map(|x| x.strip_prefix('@'));
+	for line in meta_data {
+		let mut line = line.split(char::is_whitespace);
+		match line.next().unwrap() {
+			"maxtower" => level_data.max_towers = Some(line.next().unwrap().parse().unwrap()),
+			_ => panic!("Jaaj"),
+		}
+	}
+	println!("{x:?}", x = level_data.max_towers);
+	Ok(level_data)
 }
 
 fn compute_distance(grid: &mut Grid<Cell>) {
@@ -418,13 +447,14 @@ fn main() {
 	} else {
 		String::from("./levels/test")
 	};
-	let mut grid = match load_level(level_file.as_str()) {
+	let level_data = match load_level(level_file.as_str()) {
 		Ok(grid) => grid,
 		Err(jaaj) => match jaaj.kind() {
 			std::io::ErrorKind::NotFound => panic!("File not found at {level_file}"),
 			_ => panic!("Error while reading level file"),
 		},
 	};
+	let mut grid = level_data.init_grid;
 	// _print_dist(&grid);
 	compute_distance(&mut grid);
 	_print_dist(&grid);
