@@ -4,6 +4,7 @@ use coords::*;
 
 use core::panic;
 use image::GenericImageView;
+use std::collections::HashMap;
 use std::fs;
 
 #[derive(Clone)]
@@ -34,17 +35,20 @@ struct Cell {
 struct LevelData {
 	init_grid: Grid<Cell>,
 	max_towers: Option<u32>,
+	init_events: Vec<GameEvent>,
 }
 
 impl LevelData {
 	fn new(grid: Grid<Cell>) -> LevelData {
-		LevelData { init_grid: grid, max_towers: None }
+		LevelData { init_grid: grid, max_towers: None, init_events: vec![] }
 	}
 }
 
 struct LevelState {
 	grid: Grid<Cell>,
 	remaining_towers: Option<u32>,
+	turn: u32,
+	events: Vec<GameEvent>,
 	game_joever: bool,
 }
 
@@ -52,7 +56,30 @@ impl LevelState {
 	fn new(level_data: &LevelData) -> LevelState {
 		let mut grid = level_data.init_grid.clone();
 		compute_distance(&mut grid);
-		LevelState { grid, remaining_towers: level_data.max_towers, game_joever: false }
+		LevelState {
+			grid,
+			remaining_towers: level_data.max_towers,
+			turn: 0,
+			events: level_data.init_events.clone(),
+			game_joever: false,
+		}
+	}
+}
+
+#[derive(Clone)]
+enum GameEventType {
+	EnemySpawn(Coords),
+}
+
+#[derive(Clone)]
+struct GameEvent {
+	turn: u32,
+	event_type: GameEventType,
+}
+
+impl GameEvent {
+	fn new(turn: u32, event_type: GameEventType) -> GameEvent {
+		GameEvent { turn, event_type }
 	}
 }
 
@@ -272,9 +299,52 @@ fn towers_move(grid: &mut Grid<Cell>) {
 	}
 }
 
+fn apply_events(level: &mut LevelState) {
+	for event in level.events.iter_mut().filter(|e| e.turn == level.turn) {
+		match event.event_type {
+			GameEventType::EnemySpawn(coords) => {
+				if let Some(tile) = level.grid.get_mut(coords) {
+					match tile.obj {
+						Obj::Empty | Obj::Player => tile.obj = Obj::Enemy { hp: 3, hp_max: 3 },
+						// Can't place enemy
+						_ => event.turn += 1,
+					}
+				}
+			},
+		}
+	}
+}
+
+fn parse_tile(tile_string: [char; 2]) -> Cell {
+	let mut cell = Cell { obj: Obj::Empty, groud: Ground::Grass };
+	cell.groud = match tile_string[0] {
+		'O' => Ground::Grass,
+		'x' => Ground::Water,
+		'|' => Ground::Path(-1),
+		_ => panic!(
+			"Gwound fowmat '{}{}' incowect >w<",
+			tile_string[0], tile_string[1]
+		),
+	};
+	cell.obj = match tile_string[1] {
+		'-' => Obj::Empty,
+		'p' => Obj::Player,
+		't' => Obj::Tower,
+		'e' => Obj::Enemy { hp: 3, hp_max: 3 },
+		'g' => Obj::Goal,
+		'r' => Obj::Rock,
+		'T' => Obj::Tree,
+		_ => panic!(
+			"Obwect fowmat '{}{}' incowect >w<",
+			tile_string[0], tile_string[1]
+		),
+	};
+	cell
+}
+
 fn load_level(level_file: &str) -> std::io::Result<LevelData> {
 	let level_raw_data = fs::read_to_string(level_file)?;
-	let filt = |x: &&str| !x.is_empty() && !x.starts_with('@');
+	let filt = |x: &&str| !x.is_empty() && !x.starts_with('@') && !x.starts_with('~');
 	let grid_h = level_raw_data.split('\n').filter(filt).count();
 	let grid_w = level_raw_data
 		.split('\n')
@@ -285,25 +355,21 @@ fn load_level(level_file: &str) -> std::io::Result<LevelData> {
 	let dims = Dimensions { w: grid_w as i32, h: grid_h as i32 };
 	let mut grid: Grid<Cell> = Grid::new(dims, Cell { obj: Obj::Empty, groud: Ground::Grass });
 	let mut cells_info = level_raw_data.split(char::is_whitespace);
+	let mut h: HashMap<char, Coords> = HashMap::new();
 	for coords in grid.dims.iter() {
 		let current_tile = cells_info.next().unwrap();
-		let mut cell = grid.get_mut(coords).unwrap();
-		cell.groud = match current_tile.chars().next() {
-			Some('O') => Ground::Grass,
-			Some('x') => Ground::Water,
-			Some('|') => Ground::Path(-1),
-			_ => panic!("Ground format incorrect at {coords}"),
-		};
-		cell.obj = match current_tile.chars().nth(1) {
-			Some('-') => Obj::Empty,
-			Some('p') => Obj::Player,
-			Some('t') => Obj::Tower,
-			Some('e') => Obj::Enemy { hp: 3, hp_max: 3 },
-			Some('g') => Obj::Goal,
-			Some('r') => Obj::Rock,
-			Some('T') => Obj::Tree,
-			_ => panic!("Object format incorrect at {coords}"),
-		};
+		if current_tile.is_empty() {
+			panic!("Tile empty, may have a blank space at the end of line or two spaces");
+		}
+		let cell = grid.get_mut(coords).unwrap();
+		if current_tile.starts_with('?') {
+			h.insert(current_tile.chars().nth(1).unwrap(), coords);
+		} else {
+			let mut tile = current_tile.chars();
+			let c1 = tile.next().unwrap();
+			let c2 = tile.next().unwrap();
+			*cell = parse_tile([c1, c2]);
+		}
 	}
 	let mut level_data = LevelData::new(grid);
 	let meta_data = level_raw_data
@@ -313,6 +379,30 @@ fn load_level(level_file: &str) -> std::io::Result<LevelData> {
 		let mut line = line.split(char::is_whitespace);
 		match line.next().unwrap() {
 			"max_towers" => level_data.max_towers = Some(line.next().unwrap().parse().unwrap()),
+			"tile" => {
+				let name = line.next().unwrap();
+				let coords = h.get(&name.chars().next().unwrap()).unwrap();
+				let mut tile = line.next().unwrap().chars();
+				let c1 = tile.next().unwrap();
+				let c2 = tile.next().unwrap();
+				*level_data.init_grid.get_mut(*coords).unwrap() = parse_tile([c1, c2]);
+			},
+			"event" => match line.next().unwrap() {
+				"spawn" => match line.next().unwrap() {
+					"enemy" => {
+						let tile_name = line.next().unwrap().chars().next().unwrap();
+						let tile_coords = h.get(&tile_name).unwrap();
+						let turn: u32 = line.next().unwrap().parse().unwrap();
+						level_data.init_events.push(GameEvent::new(
+							turn,
+							GameEventType::EnemySpawn(*tile_coords),
+						));
+						// println!("OH THE MISERY Everybody wants to be my enemy");
+					},
+					creature => panic!("UwU, trying to spawn {creature} but it doesn't exist"),
+				},
+				other_event => panic!("Nyoooo unknown event {other_event}"),
+			},
 			unknown_meta_data_name => panic!("Jaaj {unknown_meta_data_name}??"),
 		}
 	}
@@ -496,7 +586,12 @@ fn main() {
 				if !level.game_joever {
 					enemies_move(&mut level.grid);
 					level.game_joever = is_game_joever(&level.grid);
+					if level.game_joever {
+						return;
+					}
 					towers_move(&mut level.grid);
+					level.turn += 1;
+					apply_events(&mut level);
 				}
 			},
 
