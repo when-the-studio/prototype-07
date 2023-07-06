@@ -1,3 +1,7 @@
+mod coords;
+
+use coords::*;
+
 use core::panic;
 use image::GenericImageView;
 use std::fs;
@@ -17,113 +21,14 @@ enum Obj {
 enum Ground {
 	Grass,
 	Water,
-	Path(i32), // contains distance to objective
+	/// Contains distance (along the path) to the goal.
+	Path(i32),
 }
 
 #[derive(Clone)]
 struct Cell {
 	obj: Obj,
 	groud: Ground,
-}
-
-#[derive(Clone, Copy)]
-struct Dimensions {
-	w: i32,
-	h: i32,
-}
-
-impl From<winit::dpi::PhysicalSize<u32>> for Dimensions {
-	fn from(size: winit::dpi::PhysicalSize<u32>) -> Dimensions {
-		Dimensions { w: size.width as i32, h: size.height as i32 }
-	}
-}
-
-impl Dimensions {
-	fn square(side: i32) -> Dimensions {
-		Dimensions { w: side, h: side }
-	}
-
-	fn area(self) -> i32 {
-		self.w * self.h
-	}
-
-	fn contains(self, coords: Coords) -> bool {
-		0 <= coords.x && coords.x < self.w && 0 <= coords.y && coords.y < self.h
-	}
-
-	fn index_of_coords(self, coords: Coords) -> Option<usize> {
-		if self.contains(coords) {
-			Some((coords.y * self.w + coords.x) as usize)
-		} else {
-			None
-		}
-	}
-}
-
-impl Dimensions {
-	fn iter(self) -> IterCoordsRect {
-		IterCoordsRect::with_rect(Rect { top_left: (0, 0).into(), dims: self })
-	}
-}
-
-struct IterCoordsRect {
-	current: Coords,
-	rect: Rect,
-}
-impl IterCoordsRect {
-	fn with_rect(rect: Rect) -> IterCoordsRect {
-		IterCoordsRect { current: rect.top_left, rect }
-	}
-}
-impl Iterator for IterCoordsRect {
-	type Item = Coords;
-	fn next(&mut self) -> Option<Coords> {
-		let coords = self.current;
-		self.current.x += 1;
-		if !self.rect.contains(self.current) {
-			self.current.x = self.rect.left();
-			self.current.y += 1;
-		}
-		if self.rect.contains(coords) {
-			Some(coords)
-		} else {
-			None
-		}
-	}
-}
-
-#[derive(Clone)]
-struct Grid<T> {
-	dims: Dimensions,
-	content: Vec<T>,
-}
-
-impl<T: Clone> Grid<T> {
-	fn new(dims: Dimensions, value: T) -> Grid<T> {
-		Grid {
-			dims,
-			content: std::iter::repeat(value)
-				.take(dims.area() as usize)
-				.collect(),
-		}
-	}
-}
-
-impl<T> Grid<T> {
-	fn get(&self, coords: Coords) -> Option<&T> {
-		if let Some(index) = self.dims.index_of_coords(coords) {
-			self.content.get(index)
-		} else {
-			None
-		}
-	}
-	fn get_mut(&mut self, coords: Coords) -> Option<&mut T> {
-		if let Some(index) = self.dims.index_of_coords(coords) {
-			self.content.get_mut(index)
-		} else {
-			None
-		}
-	}
 }
 
 struct LevelData {
@@ -136,102 +41,18 @@ impl LevelData {
 		LevelData { init_grid: grid, max_towers: None }
 	}
 }
+
 struct LevelState {
 	grid: Grid<Cell>,
-	towers: u32,
+	towers: Option<u32>,
 	game_joever: bool,
 }
 
-#[derive(Clone, Copy)]
-struct Coords {
-	x: i32,
-	y: i32,
-}
-
-#[derive(Clone, Copy)]
-struct DxDy {
-	dx: i32,
-	dy: i32,
-}
-
-impl From<(i32, i32)> for Coords {
-	fn from((x, y): (i32, i32)) -> Coords {
-		Coords { x, y }
-	}
-}
-impl From<(i32, i32)> for DxDy {
-	fn from((dx, dy): (i32, i32)) -> DxDy {
-		DxDy { dx, dy }
-	}
-}
-impl From<Coords> for DxDy {
-	fn from(coords: Coords) -> DxDy {
-		DxDy { dx: coords.x, dy: coords.y }
-	}
-}
-
-impl std::ops::Add<DxDy> for Coords {
-	type Output = Coords;
-	fn add(self, rhs: DxDy) -> Coords {
-		(self.x + rhs.dx, self.y + rhs.dy).into()
-	}
-}
-impl std::ops::AddAssign<DxDy> for Coords {
-	fn add_assign(&mut self, rhs: DxDy) {
-		*self = *self + rhs;
-	}
-}
-
-impl DxDy {
-	fn the_4_directions() -> impl Iterator<Item = DxDy> {
-		[(0, -1), (1, 0), (0, 1), (-1, 0)]
-			.into_iter()
-			.map(DxDy::from)
-	}
-}
-
-impl std::fmt::Display for Coords {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		write!(f, "{}, {}", self.x, self.y)
-	}
-}
-
-#[derive(Clone, Copy)]
-struct Rect {
-	top_left: Coords,
-	dims: Dimensions,
-}
-
-impl Rect {
-	fn tile(coords: Coords, tiles_side: i32) -> Rect {
-		Rect {
-			top_left: Coords { x: coords.x * tiles_side, y: coords.y * tiles_side },
-			dims: Dimensions::square(tiles_side),
-		}
-	}
-
-	fn top(self) -> i32 {
-		self.top_left.y
-	}
-	fn left(self) -> i32 {
-		self.top_left.x
-	}
-	fn bottom_excluded(self) -> i32 {
-		self.top_left.y + self.dims.h
-	}
-	fn right_excluded(self) -> i32 {
-		self.top_left.x + self.dims.w
-	}
-
-	fn contains(self, coords: Coords) -> bool {
-		self.left() <= coords.x
-			&& coords.x < self.right_excluded()
-			&& self.top() <= coords.y
-			&& coords.y < self.bottom_excluded()
-	}
-
-	fn iter(self) -> IterCoordsRect {
-		IterCoordsRect::with_rect(self)
+impl LevelState {
+	fn new(level_data: &LevelData) -> LevelState {
+		let mut grid = level_data.init_grid.clone();
+		compute_distance(&mut grid);
+		LevelState { grid, towers: level_data.max_towers, game_joever: false }
 	}
 }
 
@@ -555,18 +376,16 @@ fn main() {
 			_ => panic!("Error while reading level file"),
 		},
 	};
-	let mut grid = level_data.init_grid;
-	// _print_dist(&grid);
-	compute_distance(&mut grid);
-	_print_dist(&grid);
+	let mut level = LevelState::new(&level_data);
+	_print_dist(&level.grid);
 
 	let cell_pixel_side = 8 * 8;
 
 	let window = winit::window::WindowBuilder::new()
 		.with_title("Prototype 7")
 		.with_inner_size(winit::dpi::PhysicalSize::new(
-			(grid.dims.w * cell_pixel_side) as u32,
-			(grid.dims.h * cell_pixel_side) as u32,
+			(level.grid.dims.w * cell_pixel_side) as u32,
+			(level.grid.dims.h * cell_pixel_side) as u32,
 		))
 		.build(&event_loop)
 		.unwrap();
@@ -615,7 +434,7 @@ fn main() {
 	let spritesheet = image::load_from_memory(include_bytes!("../assets/spritesheet.png")).unwrap();
 
 	let mut is_ctrl_pressed = false;
-	let mut its_joever = false;
+
 	use winit::event::*;
 	event_loop.run(move |event, _, control_flow| match event {
 		Event::WindowEvent { ref event, window_id } if window_id == window.id() => match event {
@@ -665,11 +484,11 @@ fn main() {
 					_ => unreachable!(),
 				}
 				.into();
-				player_move(&mut grid, dxdy, action);
-				if !its_joever {
-					enemies_move(&mut grid);
-					its_joever = is_game_joever(&grid);
-					towers_move(&mut grid);
+				player_move(&mut level.grid, dxdy, action);
+				if !level.game_joever {
+					enemies_move(&mut level.grid);
+					level.game_joever = is_game_joever(&level.grid);
+					towers_move(&mut level.grid);
 				}
 			},
 
@@ -678,14 +497,15 @@ fn main() {
 
 		Event::MainEventsCleared => {
 			std::thread::sleep(std::time::Duration::from_millis(7));
+
 			pixel_buffer
 				.frame_mut()
 				.chunks_exact_mut(4)
 				.for_each(|pixel| pixel.copy_from_slice(&clear_color));
 
-			for coords in grid.dims.iter() {
+			for coords in level.grid.dims.iter() {
 				let dst = Rect::tile(coords, cell_pixel_side);
-				let sprite = match grid.get(coords).unwrap().groud {
+				let sprite = match level.grid.get(coords).unwrap().groud {
 					Ground::Grass => (5, 0),
 					Ground::Water => (6, 0),
 					Ground::Path(_) => (7, 0),
@@ -698,7 +518,7 @@ fn main() {
 					&spritesheet,
 					sprite_rect,
 				);
-				let sprite = match grid.get(coords).unwrap().obj {
+				let sprite = match level.grid.get(coords).unwrap().obj {
 					Obj::Empty => None,
 					Obj::Player => Some((0, 0)),
 					Obj::Goal => Some((1, 0)),
@@ -717,7 +537,7 @@ fn main() {
 						sprite_rect,
 					);
 				}
-				if let Obj::Enemy { hp, hp_max } = grid.get(coords).unwrap().obj {
+				if let Obj::Enemy { hp, hp_max } = level.grid.get(coords).unwrap().obj {
 					// Draw a life bar
 					let mut dst = Rect::tile(coords, cell_pixel_side);
 					dst.top_left.y += cell_pixel_side / 8;
@@ -729,7 +549,8 @@ fn main() {
 					draw_rect(&mut pixel_buffer, pixel_buffer_dims, dst, [0, 255, 0, 255]);
 				}
 			}
-			if its_joever {
+
+			if level.game_joever {
 				let jover_sprite = Rect {
 					top_left: Coords { x: 0, y: 8 },
 					dims: Dimensions { w: 8 * 7, h: 8 },
@@ -750,6 +571,7 @@ fn main() {
 					jover_sprite,
 				);
 			}
+
 			window.request_redraw();
 		},
 
