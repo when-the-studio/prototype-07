@@ -35,17 +35,20 @@ struct Cell {
 struct LevelData {
 	init_grid: Grid<Cell>,
 	max_towers: Option<u32>,
+	init_events: Vec<GameEvent>,
 }
 
 impl LevelData {
 	fn new(grid: Grid<Cell>) -> LevelData {
-		LevelData { init_grid: grid, max_towers: None }
+		LevelData { init_grid: grid, max_towers: None, init_events: vec![] }
 	}
 }
 
 struct LevelState {
 	grid: Grid<Cell>,
 	remaining_towers: Option<u32>,
+	turn: u32,
+	events: Vec<GameEvent>,
 	game_joever: bool,
 }
 
@@ -53,7 +56,30 @@ impl LevelState {
 	fn new(level_data: &LevelData) -> LevelState {
 		let mut grid = level_data.init_grid.clone();
 		compute_distance(&mut grid);
-		LevelState { grid, remaining_towers: level_data.max_towers, game_joever: false }
+		LevelState {
+			grid,
+			remaining_towers: level_data.max_towers,
+			turn: 0,
+			events: level_data.init_events.clone(),
+			game_joever: false,
+		}
+	}
+}
+
+#[derive(Clone)]
+enum GameEventType {
+	EnemySpawn(Coords),
+}
+
+#[derive(Clone)]
+struct GameEvent {
+	turn: u32,
+	event_type: GameEventType,
+}
+
+impl GameEvent {
+	fn new(turn: u32, event_type: GameEventType) -> GameEvent {
+		GameEvent { turn, event_type }
 	}
 }
 
@@ -273,6 +299,22 @@ fn towers_move(grid: &mut Grid<Cell>) {
 	}
 }
 
+fn apply_events(level: &mut LevelState) {
+	for event in level.events.iter_mut().filter(|e| e.turn == level.turn) {
+		match event.event_type {
+			GameEventType::EnemySpawn(coords) => {
+				if let Some(tile) = level.grid.get_mut(coords) {
+					match tile.obj {
+						Obj::Empty | Obj::Player => tile.obj = Obj::Enemy { hp: 3, hp_max: 3 },
+						// Can't place enemy
+						_ => event.turn += 1,
+					}
+				}
+			},
+		}
+	}
+}
+
 fn parse_tile(tile_string: [char; 2]) -> Cell {
 	let mut cell = Cell { obj: Obj::Empty, groud: Ground::Grass };
 	cell.groud = match tile_string[0] {
@@ -344,6 +386,22 @@ fn load_level(level_file: &str) -> std::io::Result<LevelData> {
 				let c1 = tile.next().unwrap();
 				let c2 = tile.next().unwrap();
 				*level_data.init_grid.get_mut(*coords).unwrap() = parse_tile([c1, c2]);
+			},
+			"event" => match line.next().unwrap() {
+				"spawn" => match line.next().unwrap() {
+					"enemy" => {
+						let tile_name = line.next().unwrap().chars().next().unwrap();
+						let tile_coords = h.get(&tile_name).unwrap();
+						let turn: u32 = line.next().unwrap().parse().unwrap();
+						level_data.init_events.push(GameEvent::new(
+							turn,
+							GameEventType::EnemySpawn(*tile_coords),
+						));
+						// println!("OH THE MISERY Everybody wants to be my enemy");
+					},
+					creature => panic!("UwU, trying to spawn {creature} but it doesn't exist"),
+				},
+				other_event => panic!("Nyoooo unknown event {other_event}"),
 			},
 			unknown_meta_data_name => panic!("Jaaj {unknown_meta_data_name}??"),
 		}
@@ -528,7 +586,12 @@ fn main() {
 				if !level.game_joever {
 					enemies_move(&mut level.grid);
 					level.game_joever = is_game_joever(&level.grid);
+					if level.game_joever {
+						return;
+					}
 					towers_move(&mut level.grid);
+					level.turn += 1;
+					apply_events(&mut level);
 				}
 			},
 
