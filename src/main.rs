@@ -44,7 +44,7 @@ impl LevelData {
 
 struct LevelState {
 	grid: Grid<Cell>,
-	towers: Option<u32>,
+	remaining_towers: Option<u32>,
 	game_joever: bool,
 }
 
@@ -52,7 +52,7 @@ impl LevelState {
 	fn new(level_data: &LevelData) -> LevelState {
 		let mut grid = level_data.init_grid.clone();
 		compute_distance(&mut grid);
-		LevelState { grid, towers: level_data.max_towers, game_joever: false }
+		LevelState { grid, remaining_towers: level_data.max_towers, game_joever: false }
 	}
 }
 
@@ -122,39 +122,47 @@ fn try_push(grid: &mut Grid<Cell>, coords: Coords, dd: DxDy) {
 	}
 }
 
+#[derive(PartialEq, Eq)]
 enum PlayerAction {
 	Move,
 	PlaceTower,
 	SkipTurn,
 }
 
-fn player_move(grid: &mut Grid<Cell>, dd: DxDy, action: PlayerAction) {
-	for coords in grid.dims.iter() {
-		if grid
+fn player_move(level: &mut LevelState, dd: DxDy, action: PlayerAction) {
+	for coords in level.grid.dims.iter() {
+		if level
+			.grid
 			.get(coords)
 			.is_some_and(|cell| matches!(cell.obj, Obj::Player))
 		{
 			let dst_coords = coords + dd;
 			match action {
 				PlayerAction::Move => {
-					if grid
+					if level
+						.grid
 						.get(dst_coords)
 						.is_some_and(|cell| !matches!(cell.groud, Ground::Water))
 					{
-						if !matches!(grid.get(dst_coords).unwrap().obj, Obj::Empty) {
-							try_push(grid, dst_coords, dd);
+						if !matches!(level.grid.get(dst_coords).unwrap().obj, Obj::Empty) {
+							try_push(&mut level.grid, dst_coords, dd);
 						}
-						if matches!(grid.get(dst_coords).unwrap().obj, Obj::Empty) {
-							grid.get_mut(coords).unwrap().obj = Obj::Empty;
-							grid.get_mut(dst_coords).unwrap().obj = Obj::Player;
+						if matches!(level.grid.get(dst_coords).unwrap().obj, Obj::Empty) {
+							level.grid.get_mut(coords).unwrap().obj = Obj::Empty;
+							level.grid.get_mut(dst_coords).unwrap().obj = Obj::Player;
 						}
 					}
 				},
 				PlayerAction::PlaceTower => {
-					if grid.get(dst_coords).is_some_and(|cell| {
+					if level.remaining_towers.is_some_and(|count| count == 0) {
+						// We can't place a tower if we have no more towers to place.
+					} else if level.grid.get(dst_coords).is_some_and(|cell| {
 						matches!(cell.obj, Obj::Empty) && !matches!(cell.groud, Ground::Water)
 					}) {
-						grid.get_mut(dst_coords).unwrap().obj = Obj::Tower;
+						level.grid.get_mut(dst_coords).unwrap().obj = Obj::Tower;
+						if let Some(count) = &mut level.remaining_towers {
+							*count -= 1;
+						}
 					}
 				},
 				PlayerAction::SkipTurn => {},
@@ -304,11 +312,11 @@ fn load_level(level_file: &str) -> std::io::Result<LevelData> {
 	for line in meta_data {
 		let mut line = line.split(char::is_whitespace);
 		match line.next().unwrap() {
-			"maxtower" => level_data.max_towers = Some(line.next().unwrap().parse().unwrap()),
-			_ => panic!("Jaaj"),
+			"max_towers" => level_data.max_towers = Some(line.next().unwrap().parse().unwrap()),
+			unknown_meta_data_name => panic!("Jaaj {unknown_meta_data_name}??"),
 		}
 	}
-	println!("maxtower: {x:?}", x = level_data.max_towers);
+	println!("max_towers: {x:?}", x = level_data.max_towers);
 	Ok(level_data)
 }
 
@@ -484,7 +492,7 @@ fn main() {
 					_ => unreachable!(),
 				}
 				.into();
-				player_move(&mut level.grid, dxdy, action);
+				player_move(&mut level, dxdy, action);
 				if !level.game_joever {
 					enemies_move(&mut level.grid);
 					level.game_joever = is_game_joever(&level.grid);
