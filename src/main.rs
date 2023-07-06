@@ -112,14 +112,14 @@ impl<T: Clone> Grid<T> {
 impl<T> Grid<T> {
 	fn get(&self, coords: Coords) -> Option<&T> {
 		if let Some(index) = self.dims.index_of_coords(coords) {
-			self.content.get(index as usize)
+			self.content.get(index)
 		} else {
 			None
 		}
 	}
 	fn get_mut(&mut self, coords: Coords) -> Option<&mut T> {
 		if let Some(index) = self.dims.index_of_coords(coords) {
-			self.content.get_mut(index as usize)
+			self.content.get_mut(index)
 		} else {
 			None
 		}
@@ -694,7 +694,7 @@ fn main() {
 				draw_sprite(
 					&mut pixel_buffer,
 					pixel_buffer_dims,
-					dst.clone(),
+					dst,
 					&spritesheet,
 					sprite_rect,
 				);
@@ -724,12 +724,7 @@ fn main() {
 					dst.dims.h = cell_pixel_side / 8;
 					dst.top_left.x += cell_pixel_side / 8;
 					dst.dims.w = cell_pixel_side * 6 / 8;
-					draw_rect(
-						&mut pixel_buffer,
-						pixel_buffer_dims,
-						dst.clone(),
-						[255, 0, 0, 255],
-					);
+					draw_rect(&mut pixel_buffer, pixel_buffer_dims, dst, [255, 0, 0, 255]);
 					dst.dims.w = (cell_pixel_side * 6 / 8) * hp as i32 / hp_max as i32;
 					draw_rect(&mut pixel_buffer, pixel_buffer_dims, dst, [0, 255, 0, 255]);
 				}
