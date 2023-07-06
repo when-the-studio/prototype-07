@@ -1,0 +1,39 @@
+%YAML 1.2
+---
+name: Prototype 7 Level Description Language
+file_extensions: [pr7, Pr7, PR7]
+scope: source.pr7
+
+contexts:
+  main:
+    - match: '\~.*$'
+      scope: comment.line.pr7
+    - match: '(\@max_towers)\s([0-9]+)'
+      captures:
+        1: storage.type.struct.pr7
+        2: constant.numeric.value.pr7
+    - match: '(\@tile)\s([A-Za-z])\s([^ ]{2})'
+      captures:
+        1: storage.type.struct.pr7
+        2: entity.name.pr7
+        3: string.pr7
+    - match: '(\@event)\s(spawn)\s(enemy)\s([A-Za-z])\s([0-9]+)'
+      captures:
+        1: keyword.control.pr7
+        2: keyword.control.pr7
+        3: constant.numeric.value.pr7
+        4: entity.name.pr7
+        5: constant.numeric.value.pr7
+    - match: '(\@[a-z_]+).*$'
+      captures:
+        1: keyword.control.pr7
+    - match: '(\?)([A-Za-z])'
+      captures:
+        1: storage.type.struct.pr7
+        2: entity.name.function.pr7
+    - match: '([^ ])(\-)'
+      captures:
+        1: string.pr7
+        2: comment.block.pr7
+    - match: '[^ ]{2}'
+      scope: string.pr7
