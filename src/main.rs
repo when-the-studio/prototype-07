@@ -4,6 +4,7 @@ use coords::*;
 
 use core::panic;
 use image::GenericImageView;
+use std::collections::HashMap;
 use std::fs;
 
 #[derive(Clone)]
@@ -272,9 +273,36 @@ fn towers_move(grid: &mut Grid<Cell>) {
 	}
 }
 
+fn parse_tile(tile_string: [char; 2]) -> Cell {
+	let mut cell = Cell { obj: Obj::Empty, groud: Ground::Grass };
+	cell.groud = match tile_string[0] {
+		'O' => Ground::Grass,
+		'x' => Ground::Water,
+		'|' => Ground::Path(-1),
+		_ => panic!(
+			"Gwound fowmat '{}{}' incowect >w<",
+			tile_string[0], tile_string[1]
+		),
+	};
+	cell.obj = match tile_string[1] {
+		'-' => Obj::Empty,
+		'p' => Obj::Player,
+		't' => Obj::Tower,
+		'e' => Obj::Enemy { hp: 3, hp_max: 3 },
+		'g' => Obj::Goal,
+		'r' => Obj::Rock,
+		'T' => Obj::Tree,
+		_ => panic!(
+			"Obwect fowmat '{}{}' incowect >w<",
+			tile_string[0], tile_string[1]
+		),
+	};
+	cell
+}
+
 fn load_level(level_file: &str) -> std::io::Result<LevelData> {
 	let level_raw_data = fs::read_to_string(level_file)?;
-	let filt = |x: &&str| !x.is_empty() && !x.starts_with('@');
+	let filt = |x: &&str| !x.is_empty() && !x.starts_with('@') && !x.starts_with('~');
 	let grid_h = level_raw_data.split('\n').filter(filt).count();
 	let grid_w = level_raw_data
 		.split('\n')
@@ -285,25 +313,21 @@ fn load_level(level_file: &str) -> std::io::Result<LevelData> {
 	let dims = Dimensions { w: grid_w as i32, h: grid_h as i32 };
 	let mut grid: Grid<Cell> = Grid::new(dims, Cell { obj: Obj::Empty, groud: Ground::Grass });
 	let mut cells_info = level_raw_data.split(char::is_whitespace);
+	let mut h: HashMap<char, Coords> = HashMap::new();
 	for coords in grid.dims.iter() {
 		let current_tile = cells_info.next().unwrap();
-		let mut cell = grid.get_mut(coords).unwrap();
-		cell.groud = match current_tile.chars().next() {
-			Some('O') => Ground::Grass,
-			Some('x') => Ground::Water,
-			Some('|') => Ground::Path(-1),
-			_ => panic!("Ground format incorrect at {coords}"),
-		};
-		cell.obj = match current_tile.chars().nth(1) {
-			Some('-') => Obj::Empty,
-			Some('p') => Obj::Player,
-			Some('t') => Obj::Tower,
-			Some('e') => Obj::Enemy { hp: 3, hp_max: 3 },
-			Some('g') => Obj::Goal,
-			Some('r') => Obj::Rock,
-			Some('T') => Obj::Tree,
-			_ => panic!("Object format incorrect at {coords}"),
-		};
+		if current_tile.is_empty() {
+			panic!("Tile empty, may have a blank space at the end of line or two spaces");
+		}
+		let cell = grid.get_mut(coords).unwrap();
+		if current_tile.starts_with('?') {
+			h.insert(current_tile.chars().nth(1).unwrap(), coords);
+		} else {
+			let mut tile = current_tile.chars();
+			let c1 = tile.next().unwrap();
+			let c2 = tile.next().unwrap();
+			*cell = parse_tile([c1, c2]);
+		}
 	}
 	let mut level_data = LevelData::new(grid);
 	let meta_data = level_raw_data
@@ -313,6 +337,14 @@ fn load_level(level_file: &str) -> std::io::Result<LevelData> {
 		let mut line = line.split(char::is_whitespace);
 		match line.next().unwrap() {
 			"max_towers" => level_data.max_towers = Some(line.next().unwrap().parse().unwrap()),
+			"tile" => {
+				let name = line.next().unwrap();
+				let coords = h.get(&name.chars().next().unwrap()).unwrap();
+				let mut tile = line.next().unwrap().chars();
+				let c1 = tile.next().unwrap();
+				let c2 = tile.next().unwrap();
+				*level_data.init_grid.get_mut(*coords).unwrap() = parse_tile([c1, c2]);
+			},
 			unknown_meta_data_name => panic!("Jaaj {unknown_meta_data_name}??"),
 		}
 	}
