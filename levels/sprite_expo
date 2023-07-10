@@ -1,0 +1,14 @@
+?A |- |- |- |( |- |) |- |{ |- |- |- |- |- |g
+O- O- O- O- O- O- O- O- O- O- O- O- O- O- |-
+O- O- Op O- O- Oy Od Ok Ou Ot O- O- O- O- |-
+O- O- O- O- O- O- O- O- O- O- O- O- O- O- |-
+|W |Z |L |H |[ |- |] |- |} |- |- |- |- |- |-
+@tile A |-
+~@wave 5
+@event spawn enemy A 5
+@event spawn enemy A 7
+@event spawn enemy A 9
+~@wave 15
+@event spawn enemy A 15
+@event spawn enemy A 17
+@event spawn enemy A 19

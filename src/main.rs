@@ -25,6 +25,9 @@ impl Obj {
 		let hp = variant.hp_max();
 		Obj::Enemy { variant, hp }
 	}
+	fn new_tower(variant: Tower) -> Obj {
+		Obj::Tower { variant, stunned: false }
+	}
 }
 
 #[derive(Clone)]
@@ -35,7 +38,7 @@ enum Ground {
 	Path(i32),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 enum Direction {
 	North,
 	South,
@@ -43,7 +46,7 @@ enum Direction {
 	West,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 enum Protection {
 	Sides,
 	FullStack,
@@ -51,6 +54,39 @@ enum Protection {
 	UniqueBack,
 	ThreeFront,
 	ThreeBack,
+}
+
+impl Protection {
+	fn sprite(self, dir: Direction) -> (i32, i32) {
+		match (self, dir) {
+			(Protection::Sides, Direction::North | Direction::South)
+			| (Protection::FullStack, Direction::East | Direction::West) => (4, 3),
+			(Protection::Sides, Direction::East | Direction::West)
+			| (Protection::FullStack, Direction::North | Direction::South) => (5, 3),
+			(Protection::UniqueFront, Direction::West) | (Protection::UniqueBack, Direction::East) => {
+				(6, 3)
+			},
+			(Protection::UniqueFront, Direction::East) | (Protection::UniqueBack, Direction::West) => {
+				(7, 3)
+			},
+			(Protection::UniqueFront, Direction::North)
+			| (Protection::UniqueBack, Direction::South) => (8, 3),
+			(Protection::UniqueFront, Direction::South)
+			| (Protection::UniqueBack, Direction::North) => (9, 3),
+			(Protection::ThreeFront, Direction::West) | (Protection::ThreeBack, Direction::East) => {
+				(10, 3)
+			},
+			(Protection::ThreeFront, Direction::East) | (Protection::ThreeBack, Direction::West) => {
+				(11, 3)
+			},
+			(Protection::ThreeFront, Direction::North) | (Protection::ThreeBack, Direction::South) => {
+				(12, 3)
+			},
+			(Protection::ThreeFront, Direction::South) | (Protection::ThreeBack, Direction::North) => {
+				(13, 3)
+			},
+		}
+	}
 }
 
 #[derive(Clone)]
@@ -266,6 +302,46 @@ fn player_move(level: &mut LevelState, dd: DxDy, action: PlayerAction) {
 	}
 }
 
+fn enemy_displacement(new_grid: &mut Grid<Cell>, coords: Coords) -> Coords {
+	// We may move. We try to find an adjacent path tile that will get us loser
+	// to the goal (so its distance to the goal should be smaller that our
+	// current distance) (these distances are stored in the path tiles).
+	let dist_to_goal = if let Ground::Path(dist) = new_grid.get(coords).unwrap().groud {
+		dist
+	} else {
+		panic!("Not a path?????")
+	};
+	for dd in DxDy::the_4_directions() {
+		let dst_coords = coords + dd;
+		if new_grid.get(dst_coords).is_some_and(|cell| {
+			matches!(
+				cell.groud,
+				Ground::Path(neighbor_dist) if neighbor_dist < dist_to_goal
+			) && matches!(
+				cell.obj,
+				Obj::Empty | Obj::Goal | Obj::Tower { .. } | Obj::Rock | Obj::Enemy { .. }
+			)
+		}) {
+			if matches!(new_grid.get_mut(dst_coords).unwrap().obj, Obj::Rock) {
+				try_push(new_grid, dst_coords, dd);
+			}
+			if matches!(new_grid.get_mut(dst_coords).unwrap().obj, Obj::Enemy { .. }) {
+				enemy_displacement(new_grid, dst_coords);
+			}
+			if !matches!(
+				new_grid.get_mut(dst_coords).unwrap().obj,
+				Obj::Rock | Obj::Enemy { .. }
+			) {
+				new_grid.get_mut(dst_coords).unwrap().obj =
+					std::mem::replace(&mut new_grid.get_mut(coords).unwrap().obj, Obj::Empty);
+				return dst_coords;
+			}
+			break;
+		}
+	}
+	coords
+}
+
 fn enemies_move(grid: &mut Grid<Cell>) {
 	let mut new_grid = grid.clone();
 	// In order for enemies to try to move in an efficient way, enemies closer to the goal
@@ -292,29 +368,48 @@ fn enemies_move(grid: &mut Grid<Cell>) {
 				if dist_to_goal != dist {
 					continue;
 				}
-				// We may move. We try to find an adjacent path tile that will get us loser
-				// to the goal (so its distance to the goal should be smaller that our
-				// current distance) (these distances are stored in the path tiles).
-				for dd in DxDy::the_4_directions() {
-					let dst_coords = coords + dd;
-					if new_grid.get(dst_coords).is_some_and(|cell| {
-						matches!(
-							cell.groud,
-							Ground::Path(neighbor_dist) if neighbor_dist < dist_to_goal
-						) && matches!(
-							cell.obj,
-							Obj::Empty | Obj::Goal | Obj::Tower { .. } | Obj::Rock
-						)
-					}) {
-						if matches!(new_grid.get_mut(dst_coords).unwrap().obj, Obj::Rock) {
-							try_push(&mut new_grid, dst_coords, dd);
+				match grid.get(coords).unwrap().obj {
+					Obj::Enemy { variant: Enemy::Basic | Enemy::Tank, .. } => {
+						enemy_displacement(&mut new_grid, coords);
+					},
+					Obj::Enemy { variant: Enemy::Speeeeed, .. } => {
+						let new_coords = enemy_displacement(&mut new_grid, coords);
+						enemy_displacement(&mut new_grid, new_coords);
+					},
+					Obj::Enemy { variant: Enemy::Stuner, .. } => {
+						//stun
+						for dd in DxDy::the_4_directions() {
+							let mut coords_possible_target = coords;
+							loop {
+								coords_possible_target += dd;
+								if grid.get(coords_possible_target).is_some_and(|cell| {
+									matches!(cell.obj, Obj::Player { .. } | Obj::Tower { .. })
+								}) {
+									// An thing is in a straight line of sight, we shoot it.
+									if let Obj::Player { stunned } | Obj::Tower { stunned, .. } =
+										&mut new_grid.get_mut(coords_possible_target).unwrap().obj
+									{
+										*stunned = true;
+									} else {
+										unreachable!()
+									};
+									break;
+								}
+								if grid.get(coords_possible_target).is_none()
+									|| grid
+										.get(coords_possible_target)
+										.is_some_and(|cell| !matches!(cell.obj, Obj::Empty))
+								{
+									// View is blocked by some non-targettable object.
+									break;
+								}
+							}
 						}
-						if !matches!(new_grid.get_mut(dst_coords).unwrap().obj, Obj::Rock) {
-							new_grid.get_mut(dst_coords).unwrap().obj =
-								std::mem::replace(&mut new_grid.get_mut(coords).unwrap().obj, Obj::Empty);
-						}
-						break;
-					}
+						enemy_displacement(&mut new_grid, coords);
+					},
+					_ => {
+						enemy_displacement(&mut new_grid, coords);
+					},
 				}
 			}
 		}
@@ -331,7 +426,7 @@ fn towers_move(grid: &mut Grid<Cell>) {
 	for coords in grid.dims.iter() {
 		if grid
 			.get(coords)
-			.is_some_and(|cell| matches!(cell.obj, Obj::Tower { .. }))
+			.is_some_and(|cell| matches!(cell.obj, Obj::Tower { stunned: false, .. }))
 		{
 			for dd in DxDy::the_4_directions() {
 				let mut coords_possible_target = coords;
@@ -399,8 +494,40 @@ fn parse_tile(tile_string: [char; 2]) -> Cell {
 	cell.obj = match tile_string[1] {
 		'-' => Obj::Empty,
 		'p' => Obj::Player { stunned: false },
-		't' => Obj::Tower { variant: Tower::Basic, stunned: false },
+		't' => Obj::new_tower(Tower::Basic),
+		'u' => Obj::new_tower(Tower::Piercing),
+		'k' => Obj::new_tower(Tower::TotalEnergy),
+		'd' => Obj::new_tower(Tower::Bomber),
+		'y' => Obj::new_tower(Tower::Pusher),
 		'e' => Obj::new_enemy(Enemy::Basic),
+		'W' => Obj::new_enemy(Enemy::Tank),
+		'Z' => Obj::new_enemy(Enemy::Speeeeed),
+		'L' => Obj::new_enemy(Enemy::Stuner),
+		'H' => Obj::new_enemy(Enemy::Eater),
+		'{' => Obj::new_enemy(Enemy::Protected {
+			direction: Direction::East,
+			protection: Protection::Sides,
+		}),
+		'}' => Obj::new_enemy(Enemy::Protected {
+			direction: Direction::East,
+			protection: Protection::FullStack,
+		}),
+		')' => Obj::new_enemy(Enemy::Protected {
+			direction: Direction::East,
+			protection: Protection::UniqueFront,
+		}),
+		'(' => Obj::new_enemy(Enemy::Protected {
+			direction: Direction::East,
+			protection: Protection::UniqueBack,
+		}),
+		']' => Obj::new_enemy(Enemy::Protected {
+			direction: Direction::East,
+			protection: Protection::ThreeFront,
+		}),
+		'[' => Obj::new_enemy(Enemy::Protected {
+			direction: Direction::East,
+			protection: Protection::ThreeBack,
+		}),
 		'g' => Obj::Goal,
 		'r' => Obj::Rock,
 		'T' => Obj::Tree,
@@ -703,7 +830,9 @@ fn main() {
 					Obj::Enemy { variant: Enemy::Speeeeed, .. } => Some((2, 4)),
 					Obj::Enemy { variant: Enemy::Stuner, .. } => Some((2, 5)),
 					Obj::Enemy { variant: Enemy::Eater, .. } => Some((2, 6)),
-					Obj::Enemy { variant: Enemy::Protected { .. }, .. } => todo!("Aaaa"),
+					Obj::Enemy { variant: Enemy::Protected { direction, protection }, .. } => {
+						Some(protection.sprite(direction))
+					},
 					Obj::Tower { variant: Tower::Basic, .. } => Some((3, 2)),
 					Obj::Tower { variant: Tower::Piercing, .. } => Some((3, 3)),
 					Obj::Tower { variant: Tower::TotalEnergy, .. } => Some((3, 4)),
@@ -735,6 +864,20 @@ fn main() {
 					draw_rect(&mut pixel_buffer, pixel_buffer_dims, dst, [255, 0, 0, 255]);
 					dst.dims.w = (cell_pixel_side * 6 / 8) * *hp as i32 / variant.hp_max() as i32;
 					draw_rect(&mut pixel_buffer, pixel_buffer_dims, dst, [0, 255, 0, 255]);
+				}
+				if let Obj::Player { stunned: true } | Obj::Tower { stunned: true, .. } =
+					&level.grid.get(coords).unwrap().obj
+				{
+					let mut dst = dst;
+					dst.dims.w /= 4;
+					dst.dims.h /= 4;
+					dst.top_left.x += 6 * cell_pixel_side / 8;
+					draw_rect(
+						&mut pixel_buffer,
+						pixel_buffer_dims,
+						dst,
+						[255, 255, 0, 255],
+					);
 				}
 			}
 
