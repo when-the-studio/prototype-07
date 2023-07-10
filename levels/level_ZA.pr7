@@ -1,0 +1,28 @@
+OT OT OT OT O- O- O- O- O- O- O-
+OT OT O- O- O- O- O- O- O- O- O-
+O- O- O- O- O- O- O- O- O- O- O-
+O- O- O- O- |- |p |- |- |- |g O-
+O- O- O- O- |- O- O- O- O- O- O-
+O- O- O- O- |- O- O- O- O- O- O-
+O- O- O- O- |- O- O- O- O- O- O-
+O- O- O- O- |- O- O- O- O- O- O-
+?A |- |- |- |- O- O- O- O- O- O-
+O- O- O- O- O- O- O- O- O- O- O-
+O- O- O- O- O- O- O- O- O- O- O-
+@tile A |-
+
+@max_towers 3
+
+@event spawn basic A 4
+@event spawn basic A 6
+@event spawn basic A 8
+@event spawn basic A 10
+
+@event spawn tank A 16
+@event spawn tank A 18
+
+@event spawn tank A 26
+@event spawn tank A 27
+@event spawn tank A 28
+
+~With only basic towers it is possible to win with 2 spare tiles.
