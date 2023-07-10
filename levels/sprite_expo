@@ -4,11 +4,14 @@ O- O- Op O- O- Oy Od Ok Ou Ot O- O- O- O- |-
 O- O- O- Ok O- O- O- O- O- O- O- O- O- O- |-
 |W |Z |L |H |[ |- |] |- |} |- |- |- |- |- |-
 @tile A |-
+@event spawn protected_three_front A 1
+@event spawn speeeeed A 2
+@event spawn tank A 3
 ~@wave 5
-@event spawn enemy A 5
-@event spawn enemy A 7
-@event spawn enemy A 9
+@event spawn basic A 5
+@event spawn basic A 7
+@event spawn basic A 9
 ~@wave 15
-@event spawn enemy A 15
-@event spawn enemy A 17
-@event spawn enemy A 19
+@event spawn basic A 15
+@event spawn basic A 17
+@event spawn basic A 19

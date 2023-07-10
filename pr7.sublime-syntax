@@ -17,7 +17,7 @@ contexts:
         1: storage.type.struct.pr7
         2: entity.name.pr7
         3: string.pr7
-    - match: '(\@event)\s(spawn)\s(enemy)\s([A-Za-z])\s([0-9]+)'
+    - match: '(\@event)\s(spawn)\s([a-z_]+)\s([A-Za-z])\s([0-9]+)'
       captures:
         1: keyword.control.pr7
         2: keyword.control.pr7

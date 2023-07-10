@@ -195,7 +195,7 @@ impl LevelState {
 
 #[derive(Clone)]
 enum GameEventType {
-	EnemySpawn(Coords),
+	EnemySpawn(Coords, Enemy),
 }
 
 #[derive(Clone)]
@@ -261,7 +261,10 @@ fn try_push(grid: &mut Grid<Cell>, coords: Coords, dd: DxDy, can_push_enemies: b
 		return;
 	}
 	let obj = grid.get(coords).unwrap().obj.clone();
-	if matches!(obj, Obj::Rock | Obj::Tower { .. } | Obj::Bomb { .. }) {
+	if matches!(
+		obj,
+		Obj::Rock | Obj::Tower { .. } | Obj::Bomb { .. } | Obj::Flower { .. }
+	) {
 		let dst_coords = coords + dd;
 		try_push(grid, dst_coords, dd, can_push_enemies);
 		if grid
@@ -370,6 +373,7 @@ fn enemy_displacement(new_grid: &mut Grid<Cell>, coords: Coords) -> Coords {
 					| Obj::Goal | Obj::Tower { .. }
 					| Obj::Rock | Obj::Enemy { .. }
 					| Obj::Bomb { .. }
+					| Obj::Player { .. }
 			)
 		}) {
 			if matches!(
@@ -522,7 +526,7 @@ fn bomb_move(grid: &mut Grid<Cell>) {
 					} else {
 						matches!(
 							grid.get(coords_explodes).unwrap().obj,
-							Obj::Player { .. } | Obj::Tower { .. }
+							Obj::Player { .. } | Obj::Tower { .. } | Obj::Flower { .. }
 						)
 					};
 				if is_dead {
@@ -715,11 +719,11 @@ fn towers_move(grid: &mut Grid<Cell>) {
 
 fn apply_events(level: &mut LevelState) {
 	for event in level.events.iter_mut().filter(|e| e.turn == level.turn) {
-		match event.event_type {
-			GameEventType::EnemySpawn(coords) => {
-				if let Some(tile) = level.grid.get_mut(coords) {
+		match &event.event_type {
+			GameEventType::EnemySpawn(coords, enemy) => {
+				if let Some(tile) = level.grid.get_mut(*coords) {
 					match tile.obj {
-						Obj::Empty | Obj::Player { .. } => tile.obj = Obj::new_enemy(Enemy::Basic),
+						Obj::Empty | Obj::Player { .. } => tile.obj = Obj::new_enemy(enemy.clone()),
 						// Can't place enemy
 						_ => event.turn += 1,
 					}
@@ -842,18 +846,46 @@ fn load_level(level_file: &str) -> std::io::Result<LevelData> {
 				*level_data.init_grid.get_mut(*coords).unwrap() = parse_tile([c1, c2]);
 			},
 			"event" => match line.next().unwrap() {
-				"spawn" => match line.next().unwrap() {
-					"enemy" => {
-						let tile_name = line.next().unwrap().chars().next().unwrap();
-						let tile_coords = h.get(&tile_name).unwrap();
-						let turn: u32 = line.next().unwrap().parse().unwrap();
-						level_data.init_events.push(GameEvent::new(
-							turn,
-							GameEventType::EnemySpawn(*tile_coords),
-						));
-						// println!("OH THE MISERY Everybody wants to be my enemy");
-					},
-					creature => panic!("UwU, trying to spawn {creature} but it doesn't exist"),
+				"spawn" => {
+					let enemy = match line.next().unwrap() {
+						"basic" => Enemy::Basic,
+						"tank" => Enemy::Tank,
+						"speeeeed" => Enemy::Speeeeed,
+						"stun" => Enemy::Stuner,
+						"eat" => Enemy::Eater,
+						"protected_sides" => {
+							Enemy::Protected { direction: Direction::East, protection: Protection::Sides }
+						},
+						"protected_full_stack" => Enemy::Protected {
+							direction: Direction::East,
+							protection: Protection::FullStack,
+						},
+						"protected_front" => Enemy::Protected {
+							direction: Direction::East,
+							protection: Protection::UniqueFront,
+						},
+						"protected_back" => Enemy::Protected {
+							direction: Direction::East,
+							protection: Protection::UniqueBack,
+						},
+						"protected_three_front" => Enemy::Protected {
+							direction: Direction::East,
+							protection: Protection::ThreeFront,
+						},
+						"protected_three_back" => Enemy::Protected {
+							direction: Direction::East,
+							protection: Protection::ThreeBack,
+						},
+						creature => panic!("UwU, trying to spawn {creature} but it doesn't exist"),
+					};
+					let tile_name = line.next().unwrap().chars().next().unwrap();
+					let tile_coords = h.get(&tile_name).unwrap();
+					let turn: u32 = line.next().unwrap().parse().unwrap();
+					level_data.init_events.push(GameEvent::new(
+						turn,
+						GameEventType::EnemySpawn(*tile_coords, enemy),
+					));
+					// println!("OH THE MISERY Everybody wants to be my enemy");
 				},
 				other_event => panic!("Nyoooo unknown event {other_event}"),
 			},
