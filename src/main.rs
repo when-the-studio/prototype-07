@@ -10,12 +10,21 @@ use std::fs;
 #[derive(Clone)]
 enum Obj {
 	Empty,
-	Player,
+	Player { stunned: bool },
 	Goal,
-	Enemy { hp: u32, hp_max: u32 },
-	Tower,
+	Enemy { variant: Enemy, hp: u32 },
+	Tower { variant: Tower, stunned: bool },
+	Bomb { countdown: u32 },
+	Flower { variant: Flower },
 	Rock,
 	Tree,
+}
+
+impl Obj {
+	fn new_enemy(variant: Enemy) -> Obj {
+		let hp = variant.hp_max();
+		Obj::Enemy { variant, hp }
+	}
 }
 
 #[derive(Clone)]
@@ -27,9 +36,66 @@ enum Ground {
 }
 
 #[derive(Clone)]
+enum Direction {
+	North,
+	South,
+	East,
+	West,
+}
+
+#[derive(Clone)]
+enum Protection {
+	Sides,
+	FullStack,
+	UniqueFront,
+	UniqueBack,
+	ThreeFront,
+	ThreeBack,
+}
+
+#[derive(Clone)]
+enum Enemy {
+	Basic,
+	Tank,
+	Protected { direction: Direction, protection: Protection },
+	Speeeeed,
+	Stuner,
+	Eater,
+}
+
+impl Enemy {
+	fn hp_max(&self) -> u32 {
+		match self {
+			Enemy::Basic => 5,
+			Enemy::Tank => 9,
+			Enemy::Protected { .. } => 4,
+			Enemy::Speeeeed => 3,
+			Enemy::Stuner => 4,
+			Enemy::Eater => 4,
+		}
+	}
+}
+
+#[derive(Clone, PartialEq, Eq)]
+enum Tower {
+	Basic,
+	Piercing,
+	TotalEnergy,
+	Bomber,
+	Pusher,
+}
+
+#[derive(Clone)]
+enum Flower {
+	BlueFlower,
+	TheOther,
+}
+
+#[derive(Clone)]
 struct Cell {
 	obj: Obj,
 	groud: Ground,
+	rocky_path: bool,
 }
 
 struct LevelData {
@@ -134,7 +200,7 @@ fn try_push(grid: &mut Grid<Cell>, coords: Coords, dd: DxDy) {
 		return;
 	}
 	let obj = grid.get(coords).unwrap().obj.clone();
-	if matches!(obj, Obj::Rock | Obj::Tower) {
+	if matches!(obj, Obj::Rock | Obj::Tower { .. }) {
 		let dst_coords = coords + dd;
 		try_push(grid, dst_coords, dd);
 		if grid
@@ -152,7 +218,7 @@ fn try_push(grid: &mut Grid<Cell>, coords: Coords, dd: DxDy) {
 #[derive(PartialEq, Eq)]
 enum PlayerAction {
 	Move,
-	PlaceTower,
+	PlaceTower { variant: Tower },
 	SkipTurn,
 }
 
@@ -161,7 +227,7 @@ fn player_move(level: &mut LevelState, dd: DxDy, action: PlayerAction) {
 		if level
 			.grid
 			.get(coords)
-			.is_some_and(|cell| matches!(cell.obj, Obj::Player))
+			.is_some_and(|cell| matches!(cell.obj, Obj::Player { stunned: false }))
 		{
 			let dst_coords = coords + dd;
 			match action {
@@ -176,17 +242,18 @@ fn player_move(level: &mut LevelState, dd: DxDy, action: PlayerAction) {
 						}
 						if matches!(level.grid.get(dst_coords).unwrap().obj, Obj::Empty) {
 							level.grid.get_mut(coords).unwrap().obj = Obj::Empty;
-							level.grid.get_mut(dst_coords).unwrap().obj = Obj::Player;
+							level.grid.get_mut(dst_coords).unwrap().obj = Obj::Player { stunned: false };
 						}
 					}
 				},
-				PlayerAction::PlaceTower => {
+				PlayerAction::PlaceTower { variant } => {
 					if level.remaining_towers.is_some_and(|count| count == 0) {
 						// We can't place a tower if we have no more towers to place.
 					} else if level.grid.get(dst_coords).is_some_and(|cell| {
 						matches!(cell.obj, Obj::Empty) && !matches!(cell.groud, Ground::Water)
 					}) {
-						level.grid.get_mut(dst_coords).unwrap().obj = Obj::Tower;
+						level.grid.get_mut(dst_coords).unwrap().obj =
+							Obj::Tower { variant, stunned: false };
 						if let Some(count) = &mut level.remaining_towers {
 							*count -= 1;
 						}
@@ -234,7 +301,10 @@ fn enemies_move(grid: &mut Grid<Cell>) {
 						matches!(
 							cell.groud,
 							Ground::Path(neighbor_dist) if neighbor_dist < dist_to_goal
-						) && matches!(cell.obj, Obj::Empty | Obj::Goal | Obj::Tower | Obj::Rock)
+						) && matches!(
+							cell.obj,
+							Obj::Empty | Obj::Goal | Obj::Tower { .. } | Obj::Rock
+						)
 					}) {
 						if matches!(new_grid.get_mut(dst_coords).unwrap().obj, Obj::Rock) {
 							try_push(&mut new_grid, dst_coords, dd);
@@ -261,7 +331,7 @@ fn towers_move(grid: &mut Grid<Cell>) {
 	for coords in grid.dims.iter() {
 		if grid
 			.get(coords)
-			.is_some_and(|cell| matches!(cell.obj, Obj::Tower))
+			.is_some_and(|cell| matches!(cell.obj, Obj::Tower { .. }))
 		{
 			for dd in DxDy::the_4_directions() {
 				let mut coords_possible_target = coords;
@@ -305,7 +375,7 @@ fn apply_events(level: &mut LevelState) {
 			GameEventType::EnemySpawn(coords) => {
 				if let Some(tile) = level.grid.get_mut(coords) {
 					match tile.obj {
-						Obj::Empty | Obj::Player => tile.obj = Obj::Enemy { hp: 3, hp_max: 3 },
+						Obj::Empty | Obj::Player { .. } => tile.obj = Obj::new_enemy(Enemy::Basic),
 						// Can't place enemy
 						_ => event.turn += 1,
 					}
@@ -316,7 +386,7 @@ fn apply_events(level: &mut LevelState) {
 }
 
 fn parse_tile(tile_string: [char; 2]) -> Cell {
-	let mut cell = Cell { obj: Obj::Empty, groud: Ground::Grass };
+	let mut cell = Cell { obj: Obj::Empty, groud: Ground::Grass, rocky_path: false };
 	cell.groud = match tile_string[0] {
 		'O' => Ground::Grass,
 		'x' => Ground::Water,
@@ -328,9 +398,9 @@ fn parse_tile(tile_string: [char; 2]) -> Cell {
 	};
 	cell.obj = match tile_string[1] {
 		'-' => Obj::Empty,
-		'p' => Obj::Player,
-		't' => Obj::Tower,
-		'e' => Obj::Enemy { hp: 3, hp_max: 3 },
+		'p' => Obj::Player { stunned: false },
+		't' => Obj::Tower { variant: Tower::Basic, stunned: false },
+		'e' => Obj::new_enemy(Enemy::Basic),
 		'g' => Obj::Goal,
 		'r' => Obj::Rock,
 		'T' => Obj::Tree,
@@ -353,7 +423,10 @@ fn load_level(level_file: &str) -> std::io::Result<LevelData> {
 		.split(char::is_whitespace)
 		.count();
 	let dims = Dimensions { w: grid_w as i32, h: grid_h as i32 };
-	let mut grid: Grid<Cell> = Grid::new(dims, Cell { obj: Obj::Empty, groud: Ground::Grass });
+	let mut grid: Grid<Cell> = Grid::new(
+		dims,
+		Cell { obj: Obj::Empty, groud: Ground::Grass, rocky_path: false },
+	);
 	let mut cells_info = level_raw_data.split(char::is_whitespace);
 	let mut h: HashMap<char, Coords> = HashMap::new();
 	for coords in grid.dims.iter() {
@@ -566,7 +639,7 @@ fn main() {
 			) =>
 			{
 				let mut action = if is_ctrl_pressed {
-					PlayerAction::PlaceTower
+					PlayerAction::PlaceTower { variant: Tower::Basic }
 				} else {
 					PlayerAction::Move
 				};
@@ -623,12 +696,24 @@ fn main() {
 				);
 				let sprite = match level.grid.get(coords).unwrap().obj {
 					Obj::Empty => None,
-					Obj::Player => Some((0, 0)),
-					Obj::Goal => Some((1, 0)),
-					Obj::Enemy { .. } => Some((2, 0)),
-					Obj::Tower => Some((3, 0)),
-					Obj::Rock => Some((8, 0)),
-					Obj::Tree => Some((9, 0)),
+					Obj::Player { .. } => Some((0, 2)),
+					Obj::Goal => Some((1, 2)),
+					Obj::Enemy { variant: Enemy::Basic, .. } => Some((2, 2)),
+					Obj::Enemy { variant: Enemy::Tank, .. } => Some((2, 3)),
+					Obj::Enemy { variant: Enemy::Speeeeed, .. } => Some((2, 4)),
+					Obj::Enemy { variant: Enemy::Stuner, .. } => Some((2, 5)),
+					Obj::Enemy { variant: Enemy::Eater, .. } => Some((2, 6)),
+					Obj::Enemy { variant: Enemy::Protected { .. }, .. } => todo!("Aaaa"),
+					Obj::Tower { variant: Tower::Basic, .. } => Some((3, 2)),
+					Obj::Tower { variant: Tower::Piercing, .. } => Some((3, 3)),
+					Obj::Tower { variant: Tower::TotalEnergy, .. } => Some((3, 4)),
+					Obj::Tower { variant: Tower::Bomber, .. } => Some((3, 5)),
+					Obj::Tower { variant: Tower::Pusher, .. } => Some((3, 6)),
+					Obj::Bomb { .. } => Some((4, 5)),
+					Obj::Flower { variant: Flower::BlueFlower } => Some((6, 2)),
+					Obj::Flower { variant: Flower::TheOther } => Some((7, 2)),
+					Obj::Rock => Some((8, 2)),
+					Obj::Tree => Some((9, 2)),
 				};
 				if let Some(sprite) = sprite {
 					let sprite_rect = Rect::tile(sprite.into(), 8);
@@ -640,7 +725,7 @@ fn main() {
 						sprite_rect,
 					);
 				}
-				if let Obj::Enemy { hp, hp_max } = level.grid.get(coords).unwrap().obj {
+				if let Obj::Enemy { variant, hp, .. } = &level.grid.get(coords).unwrap().obj {
 					// Draw a life bar
 					let mut dst = Rect::tile(coords, cell_pixel_side);
 					dst.top_left.y += cell_pixel_side / 8;
@@ -648,7 +733,7 @@ fn main() {
 					dst.top_left.x += cell_pixel_side / 8;
 					dst.dims.w = cell_pixel_side * 6 / 8;
 					draw_rect(&mut pixel_buffer, pixel_buffer_dims, dst, [255, 0, 0, 255]);
-					dst.dims.w = (cell_pixel_side * 6 / 8) * hp as i32 / hp_max as i32;
+					dst.dims.w = (cell_pixel_side * 6 / 8) * *hp as i32 / variant.hp_max() as i32;
 					draw_rect(&mut pixel_buffer, pixel_buffer_dims, dst, [0, 255, 0, 255]);
 				}
 			}
