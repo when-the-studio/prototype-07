@@ -1,0 +1,20 @@
+x- 0r 0r x- x- 0- 0- O- |g
+x- 0- 0r 0r x- 0- O- O- |-
+0- 0- 0r 0- x- O- O- O- |-
+0- 0- 0p O- x- x- O- O- |-
+0- O- O- O- O- x- O- O- |-
+O- O- O- O- O- x- |- |- |-
+?A |- |- |- |- |- |- O- O-
+O- O- O- x- O^ O- O- O- O-
+O- O- x- x- x- x- O- O- O-
+@tile A |-
+
+@max_towers 2
+
+@event spawn basic A 10
+
+@event spawn tank A 16
+
+@event spawn basic A 23
+@event spawn basic A 24
+@event spawn basic A 25
