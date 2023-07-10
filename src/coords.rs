@@ -139,6 +139,12 @@ impl std::ops::AddAssign<DxDy> for Coords {
 		*self = *self + rhs;
 	}
 }
+impl std::ops::Sub<DxDy> for Coords {
+	type Output = Coords;
+	fn sub(self, rhs: DxDy) -> Coords {
+		(self.x - rhs.dx, self.y - rhs.dy).into()
+	}
+}
 
 impl std::ops::Sub<Coords> for Coords {
 	type Output = DxDy;

@@ -141,7 +141,7 @@ enum Tower {
 	Basic,
 	Piercing,
 	TotalEnergy,
-	Bomber,
+	Unabomber,
 	Pusher,
 }
 
@@ -255,14 +255,14 @@ fn draw_rect(
 	}
 }
 
-fn try_push(grid: &mut Grid<Cell>, coords: Coords, dd: DxDy) {
+fn try_push(grid: &mut Grid<Cell>, coords: Coords, dd: DxDy, can_push_enemies: bool) {
 	if grid.get(coords).is_none() {
 		return;
 	}
 	let obj = grid.get(coords).unwrap().obj.clone();
-	if matches!(obj, Obj::Rock | Obj::Tower { .. }) {
+	if matches!(obj, Obj::Rock | Obj::Tower { .. } | Obj::Bomb { .. }) {
 		let dst_coords = coords + dd;
-		try_push(grid, dst_coords, dd);
+		try_push(grid, dst_coords, dd, can_push_enemies);
 		if grid
 			.get(dst_coords)
 			.is_some_and(|cell| matches!(cell.obj, Obj::Empty))
@@ -271,6 +271,21 @@ fn try_push(grid: &mut Grid<Cell>, coords: Coords, dd: DxDy) {
 				grid.get_mut(dst_coords).unwrap().obj = obj;
 			}
 			grid.get_mut(coords).unwrap().obj = Obj::Empty;
+		}
+	} else if can_push_enemies && matches!(obj, Obj::Enemy { .. }) {
+		let dst_coords = coords + dd;
+		if grid
+			.get(dst_coords)
+			.is_some_and(|cell| matches!(cell.groud, Ground::Path(_)))
+		{
+			try_push(grid, dst_coords, dd, can_push_enemies);
+			if grid
+				.get(dst_coords)
+				.is_some_and(|cell| matches!(cell.obj, Obj::Empty))
+			{
+				grid.get_mut(dst_coords).unwrap().obj = obj;
+				grid.get_mut(coords).unwrap().obj = Obj::Empty;
+			}
 		}
 	}
 }
@@ -298,7 +313,7 @@ fn player_move(level: &mut LevelState, dd: DxDy, action: PlayerAction) {
 						.is_some_and(|cell| !matches!(cell.groud, Ground::Water))
 					{
 						if !matches!(level.grid.get(dst_coords).unwrap().obj, Obj::Empty) {
-							try_push(&mut level.grid, dst_coords, dd);
+							try_push(&mut level.grid, dst_coords, dd, false);
 						}
 						if matches!(level.grid.get(dst_coords).unwrap().obj, Obj::Empty) {
 							level.grid.get_mut(coords).unwrap().obj = Obj::Empty;
@@ -347,18 +362,24 @@ fn enemy_displacement(new_grid: &mut Grid<Cell>, coords: Coords) -> Coords {
 				Ground::Path(neighbor_dist) if neighbor_dist < dist_to_goal
 			) && matches!(
 				cell.obj,
-				Obj::Empty | Obj::Goal | Obj::Tower { .. } | Obj::Rock | Obj::Enemy { .. }
+				Obj::Empty
+					| Obj::Goal | Obj::Tower { .. }
+					| Obj::Rock | Obj::Enemy { .. }
+					| Obj::Bomb { .. }
 			)
 		}) {
-			if matches!(new_grid.get_mut(dst_coords).unwrap().obj, Obj::Rock) {
-				try_push(new_grid, dst_coords, dd);
+			if matches!(
+				new_grid.get_mut(dst_coords).unwrap().obj,
+				Obj::Rock | Obj::Bomb { .. }
+			) {
+				try_push(new_grid, dst_coords, dd, false);
 			}
 			if matches!(new_grid.get_mut(dst_coords).unwrap().obj, Obj::Enemy { .. }) {
 				enemy_displacement(new_grid, dst_coords);
 			}
 			if !matches!(
 				new_grid.get_mut(dst_coords).unwrap().obj,
-				Obj::Rock | Obj::Enemy { .. }
+				Obj::Rock | Obj::Enemy { .. } | Obj::Bomb { .. }
 			) {
 				new_grid.get_mut(dst_coords).unwrap().obj =
 					std::mem::replace(&mut new_grid.get_mut(coords).unwrap().obj, Obj::Empty);
@@ -481,12 +502,65 @@ fn enemies_move(grid: &mut Grid<Cell>) {
 	*grid = new_grid;
 }
 
+fn bomb_move(grid: &mut Grid<Cell>) {
+	for coords in grid.dims.iter() {
+		if let Obj::Bomb { countdown: 0 } = grid.get(coords).unwrap().obj {
+			grid.get_mut(coords).unwrap().obj = Obj::Empty;
+			for dd in DxDy::the_4_directions() {
+				let coords_explodes = coords + dd;
+				if !grid.dims.contains(coords_explodes) {
+					continue;
+				}
+				let is_dead =
+					if let Obj::Enemy { hp, .. } = &mut grid.get_mut(coords_explodes).unwrap().obj {
+						*hp = hp.saturating_sub(4);
+						*hp == 0
+					} else {
+						matches!(
+							grid.get(coords_explodes).unwrap().obj,
+							Obj::Player { .. } | Obj::Tower { .. }
+						)
+					};
+				if is_dead {
+					grid.get_mut(coords_explodes).unwrap().obj = Obj::Empty;
+				}
+			}
+		} else if let Obj::Bomb { countdown } = &mut grid.get_mut(coords).unwrap().obj {
+			*countdown -= 1;
+		}
+	}
+}
+
 fn towers_move(grid: &mut Grid<Cell>) {
 	for coords in grid.dims.iter() {
-		if grid
-			.get(coords)
-			.is_some_and(|cell| matches!(cell.obj, Obj::Tower { stunned: false, .. }))
-		{
+		if grid.get(coords).is_some_and(|cell| {
+			matches!(cell.obj, Obj::Tower { stunned: false, .. })
+				&& !matches!(cell.obj, Obj::Tower { variant: Tower::TotalEnergy, .. })
+		}) {
+			let piercing = grid
+				.get(coords)
+				.is_some_and(|cell| matches!(cell.obj, Obj::Tower { variant: Tower::Piercing, .. }));
+			if piercing {
+				let mut powered = false;
+				for dd in DxDy::the_4_directions() {
+					let neighbor_coords = coords + dd;
+					if grid.get(neighbor_coords).is_some_and(|cell| {
+						matches!(cell.obj, Obj::Tower { variant: Tower::TotalEnergy, .. })
+					}) {
+						powered = true;
+						break;
+					}
+				}
+				if !powered {
+					continue;
+				}
+			}
+			let pushing = grid
+				.get(coords)
+				.is_some_and(|cell| matches!(cell.obj, Obj::Tower { variant: Tower::Pusher, .. }));
+			let bombing = grid
+				.get(coords)
+				.is_some_and(|cell| matches!(cell.obj, Obj::Tower { variant: Tower::Unabomber, .. }));
 			for dd in DxDy::the_4_directions() {
 				let mut coords_possible_target = coords;
 				loop {
@@ -512,23 +586,39 @@ fn towers_move(grid: &mut Grid<Cell>) {
 						} else {
 							false
 						};
-						if is_protected {
-							break;
+						if !is_protected {
+							if !bombing {
+								let is_dead = if let Obj::Enemy { hp, .. } =
+									&mut grid.get_mut(coords_possible_target).unwrap().obj
+								{
+									*hp -= 1;
+									*hp == 0
+								} else {
+									unreachable!()
+								};
+								if is_dead {
+									grid.get_mut(coords_possible_target).unwrap().obj = Obj::Empty;
+								}
+							}
+							if pushing {
+								for dd in DxDy::the_4_directions() {
+									let coords_pushed = coords_possible_target + dd;
+									try_push(grid, coords_pushed, dd, true);
+								}
+							}
+							if bombing {
+								let bomb_coords = coords_possible_target - dd;
+								if matches!(grid.get(bomb_coords).unwrap().obj, Obj::Empty)
+									&& !matches!(grid.get(bomb_coords).unwrap().groud, Ground::Water)
+								{
+									grid.get_mut(bomb_coords).unwrap().obj = Obj::Bomb { countdown: 3 };
+								}
+							}
+							if !piercing {
+								break;
+							}
 						}
-						let is_dead = if let Obj::Enemy { hp, .. } =
-							&mut grid.get_mut(coords_possible_target).unwrap().obj
-						{
-							*hp -= 1;
-							*hp == 0
-						} else {
-							unreachable!()
-						};
-						if is_dead {
-							grid.get_mut(coords_possible_target).unwrap().obj = Obj::Empty;
-						}
-						break;
-					}
-					if grid.get(coords_possible_target).is_none()
+					} else if grid.get(coords_possible_target).is_none()
 						|| grid
 							.get(coords_possible_target)
 							.is_some_and(|cell| !matches!(cell.obj, Obj::Empty))
@@ -579,7 +669,7 @@ fn parse_tile(tile_string: [char; 2]) -> Cell {
 		't' => Obj::new_tower(Tower::Basic),
 		'u' => Obj::new_tower(Tower::Piercing),
 		'k' => Obj::new_tower(Tower::TotalEnergy),
-		'd' => Obj::new_tower(Tower::Bomber),
+		'd' => Obj::new_tower(Tower::Unabomber),
 		'y' => Obj::new_tower(Tower::Pusher),
 		'e' => Obj::new_enemy(Enemy::Basic),
 		'W' => Obj::new_enemy(Enemy::Tank),
@@ -867,6 +957,7 @@ fn main() {
 				player_move(&mut level, dxdy, action);
 				if !level.game_joever {
 					enemies_move(&mut level.grid);
+					bomb_move(&mut level.grid);
 					level.game_joever = is_game_joever(&level.grid);
 					if level.game_joever {
 						return;
@@ -918,9 +1009,13 @@ fn main() {
 					Obj::Tower { variant: Tower::Basic, .. } => Some((3, 2)),
 					Obj::Tower { variant: Tower::Piercing, .. } => Some((3, 3)),
 					Obj::Tower { variant: Tower::TotalEnergy, .. } => Some((3, 4)),
-					Obj::Tower { variant: Tower::Bomber, .. } => Some((3, 5)),
+					Obj::Tower { variant: Tower::Unabomber, .. } => Some((3, 5)),
 					Obj::Tower { variant: Tower::Pusher, .. } => Some((3, 6)),
-					Obj::Bomb { .. } => Some((4, 5)),
+					Obj::Bomb { countdown: 3 } => Some((4, 5)),
+					Obj::Bomb { countdown: 2 } => Some((5, 5)),
+					Obj::Bomb { countdown: 1 } => Some((6, 5)),
+					Obj::Bomb { countdown: 0 } => Some((7, 5)),
+					Obj::Bomb { .. } => unimplemented!(),
 					Obj::Flower { variant: Flower::BlueFlower } => Some((6, 2)),
 					Obj::Flower { variant: Flower::TheOther } => Some((7, 2)),
 					Obj::Rock => Some((8, 2)),
