@@ -266,6 +266,7 @@ fn try_push(grid: &mut Grid<Cell>, coords: Coords, dd: DxDy, can_push_enemies: b
 		if grid
 			.get(dst_coords)
 			.is_some_and(|cell| matches!(cell.obj, Obj::Empty))
+			&& (!matches!(obj, Obj::Tower { .. }) || (!grid.get(dst_coords).unwrap().rocky_path))
 		{
 			if !matches!(grid.get(dst_coords).unwrap().groud, Ground::Water) {
 				grid.get_mut(dst_coords).unwrap().obj = obj;
@@ -325,7 +326,9 @@ fn player_move(level: &mut LevelState, dd: DxDy, action: PlayerAction) {
 					if level.remaining_towers.is_some_and(|count| count == 0) {
 						// We can't place a tower if we have no more towers to place.
 					} else if level.grid.get(dst_coords).is_some_and(|cell| {
-						matches!(cell.obj, Obj::Empty) && !matches!(cell.groud, Ground::Water)
+						matches!(cell.obj, Obj::Empty)
+							&& !matches!(cell.groud, Ground::Water)
+							&& !cell.rocky_path
 					}) {
 						level.grid.get_mut(dst_coords).unwrap().obj =
 							Obj::Tower { variant, stunned: false };
@@ -654,10 +657,12 @@ fn apply_events(level: &mut LevelState) {
 
 fn parse_tile(tile_string: [char; 2]) -> Cell {
 	let mut cell = Cell { obj: Obj::Empty, groud: Ground::Grass, rocky_path: false };
-	cell.groud = match tile_string[0] {
-		'O' => Ground::Grass,
-		'x' => Ground::Water,
-		'|' => Ground::Path(-1),
+	(cell.groud, cell.rocky_path) = match tile_string[0] {
+		'O' => (Ground::Grass, false),
+		'0' => (Ground::Grass, true),
+		'x' => (Ground::Water, false),
+		'|' => (Ground::Path(-1), false),
+		'/' => (Ground::Path(-1), true),
 		_ => panic!(
 			"Gwound fowmat '{}{}' incowect >w<",
 			tile_string[0], tile_string[1]
@@ -994,6 +999,16 @@ fn main() {
 					&spritesheet,
 					sprite_rect,
 				);
+				if level.grid.get(coords).unwrap().rocky_path {
+					let sprite_rect = Rect::tile((5, 2).into(), 8);
+					draw_sprite(
+						&mut pixel_buffer,
+						pixel_buffer_dims,
+						dst,
+						&spritesheet,
+						sprite_rect,
+					);
+				}
 				let sprite = match level.grid.get(coords).unwrap().obj {
 					Obj::Empty => None,
 					Obj::Player { .. } => Some((0, 2)),
