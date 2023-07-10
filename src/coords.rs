@@ -140,6 +140,13 @@ impl std::ops::AddAssign<DxDy> for Coords {
 	}
 }
 
+impl std::ops::Sub<Coords> for Coords {
+	type Output = DxDy;
+	fn sub(self, rhs: Coords) -> DxDy {
+		(self.x - rhs.x, self.y - rhs.y).into()
+	}
+}
+
 impl DxDy {
 	pub fn the_4_directions() -> impl Iterator<Item = DxDy> {
 		[(0, -1), (1, 0), (0, 1), (-1, 0)]

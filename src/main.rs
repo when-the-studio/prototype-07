@@ -87,6 +87,30 @@ impl Protection {
 			},
 		}
 	}
+
+	fn is_hurt_by_shot(self, enemy_dir: Direction, shot_comming_from_dir: Direction) -> bool {
+		// North, East, South, West
+		let sides_protected = match self.sprite(enemy_dir) {
+			(4, 3) => [false, true, false, true],
+			(5, 3) => [true, false, true, false],
+			(6, 3) => [false, false, false, true],
+			(7, 3) => [false, true, false, false],
+			(8, 3) => [true, false, false, false],
+			(9, 3) => [false, false, true, false],
+			(10, 3) => [true, false, true, true],
+			(11, 3) => [true, true, true, false],
+			(12, 3) => [true, true, false, true],
+			(13, 3) => [false, true, true, true],
+			_ => panic!("yo"),
+		};
+		let index = match shot_comming_from_dir {
+			Direction::North => 0,
+			Direction::East => 1,
+			Direction::South => 2,
+			Direction::West => 3,
+		};
+		!sides_protected[index]
+	}
 }
 
 #[derive(Clone)]
@@ -298,6 +322,10 @@ fn player_move(level: &mut LevelState, dd: DxDy, action: PlayerAction) {
 				PlayerAction::SkipTurn => {},
 			}
 			return;
+		} else if let Obj::Player { stunned: stunned @ true } =
+			&mut level.grid.get_mut(coords).unwrap().obj
+		{
+			*stunned = false;
 		}
 	}
 }
@@ -334,6 +362,18 @@ fn enemy_displacement(new_grid: &mut Grid<Cell>, coords: Coords) -> Coords {
 			) {
 				new_grid.get_mut(dst_coords).unwrap().obj =
 					std::mem::replace(&mut new_grid.get_mut(coords).unwrap().obj, Obj::Empty);
+				if let Obj::Enemy { variant: Enemy::Protected { direction, .. }, .. } =
+					&mut new_grid.get_mut(dst_coords).unwrap().obj
+				{
+					match dd {
+						DxDy { dx: 0, dy: -1 } => *direction = Direction::North,
+						DxDy { dx: 1, dy: 0 } => *direction = Direction::East,
+						DxDy { dx: 0, dy: 1 } => *direction = Direction::South,
+						DxDy { dx: -1, dy: 0 } => *direction = Direction::West,
+						DxDy { dx: 0, dy: 0 } => {},
+						_ => unimplemented!(),
+					}
+				}
 				return dst_coords;
 			}
 			break;
@@ -368,8 +408,10 @@ fn enemies_move(grid: &mut Grid<Cell>) {
 				if dist_to_goal != dist {
 					continue;
 				}
-				match grid.get(coords).unwrap().obj {
-					Obj::Enemy { variant: Enemy::Basic | Enemy::Tank, .. } => {
+				match &mut grid.get_mut(coords).unwrap().obj {
+					Obj::Enemy {
+						variant: Enemy::Basic | Enemy::Tank | Enemy::Protected { .. }, ..
+					} => {
 						enemy_displacement(&mut new_grid, coords);
 					},
 					Obj::Enemy { variant: Enemy::Speeeeed, .. } => {
@@ -407,6 +449,23 @@ fn enemies_move(grid: &mut Grid<Cell>) {
 						}
 						enemy_displacement(&mut new_grid, coords);
 					},
+					Obj::Enemy { variant: Enemy::Eater, .. } => {
+						let eat = |new_grid: &mut Grid<Cell>, coords: Coords| {
+							for dd in DxDy::the_4_directions() {
+								let neighbor_coords = coords + dd;
+								if grid.get(neighbor_coords).is_some_and(|cell| {
+									matches!(cell.obj, Obj::Player { .. } | Obj::Tower { .. })
+								}) {
+									if let Some(cell) = new_grid.get_mut(neighbor_coords) {
+										cell.obj = Obj::Empty;
+									}
+								}
+							}
+						};
+						eat(&mut new_grid, coords);
+						let new_coords = enemy_displacement(&mut new_grid, coords);
+						eat(&mut new_grid, new_coords);
+					},
 					_ => {
 						enemy_displacement(&mut new_grid, coords);
 					},
@@ -437,6 +496,25 @@ fn towers_move(grid: &mut Grid<Cell>) {
 						.is_some_and(|cell| matches!(cell.obj, Obj::Enemy { .. }))
 					{
 						// An enemy is in a straight line of sight, we shoot it.
+						let is_protected = if let Obj::Enemy {
+							variant: Enemy::Protected { direction, protection },
+							..
+						} = grid.get(coords_possible_target).unwrap().obj
+						{
+							let shot_comming_from_dir = match dd {
+								DxDy { dx: 0, dy: -1 } => Direction::South,
+								DxDy { dx: 1, dy: 0 } => Direction::West,
+								DxDy { dx: 0, dy: 1 } => Direction::North,
+								DxDy { dx: -1, dy: 0 } => Direction::East,
+								_ => panic!("aa help"),
+							};
+							!protection.is_hurt_by_shot(direction, shot_comming_from_dir)
+						} else {
+							false
+						};
+						if is_protected {
+							break;
+						}
 						let is_dead = if let Obj::Enemy { hp, .. } =
 							&mut grid.get_mut(coords_possible_target).unwrap().obj
 						{
@@ -460,6 +538,10 @@ fn towers_move(grid: &mut Grid<Cell>) {
 					}
 				}
 			}
+		} else if let Obj::Tower { stunned: stunned @ true, .. } =
+			&mut grid.get_mut(coords).unwrap().obj
+		{
+			*stunned = false;
 		}
 	}
 }
