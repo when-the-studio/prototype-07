@@ -149,6 +149,7 @@ enum Tower {
 enum Flower {
 	BlueFlower,
 	TheOther,
+	TheOtherOther,
 }
 
 #[derive(Clone)]
@@ -534,6 +535,79 @@ fn bomb_move(grid: &mut Grid<Cell>) {
 	}
 }
 
+fn flowers_move(grid: &mut Grid<Cell>) {
+	for coords in grid.dims.iter() {
+		if grid
+			.get(coords)
+			.is_some_and(|cell| matches!(cell.obj, Obj::Flower { variant: Flower::BlueFlower }))
+		{
+			for dd in DxDy::the_4_directions() {
+				let neighbor_coords = coords + dd;
+				if grid
+					.get(neighbor_coords)
+					.is_some_and(|cell| matches!(cell.obj, Obj::Player { .. }))
+				{
+					if let Some(cell) = grid.get_mut(neighbor_coords) {
+						cell.obj = Obj::Empty;
+					}
+				}
+			}
+		} else if grid
+			.get(coords)
+			.is_some_and(|cell| matches!(cell.obj, Obj::Flower { variant: Flower::TheOther }))
+		{
+			for dd in DxDy::the_4_directions() {
+				let mut coords_possible_target = coords;
+				loop {
+					coords_possible_target += dd;
+					if grid
+						.get(coords_possible_target)
+						.is_some_and(|cell| matches!(cell.obj, Obj::Player { .. }))
+					{
+						// A player is in a straight line of sight, we shoot it.
+						grid.get_mut(coords_possible_target).unwrap().obj = Obj::Empty;
+						break;
+					}
+					if grid.get(coords_possible_target).is_none()
+						|| grid
+							.get(coords_possible_target)
+							.is_some_and(|cell| !matches!(cell.obj, Obj::Empty))
+					{
+						// View is blocked by some non-targettable object.
+						break;
+					}
+				}
+			}
+		} else if grid
+			.get(coords)
+			.is_some_and(|cell| matches!(cell.obj, Obj::Flower { variant: Flower::TheOtherOther }))
+		{
+			for dd in DxDy::the_4_directions() {
+				let mut coords_possible_target = coords;
+				loop {
+					coords_possible_target += dd;
+					if grid
+						.get(coords_possible_target)
+						.is_some_and(|cell| matches!(cell.obj, Obj::Tower { .. }))
+					{
+						// A player is in a straight line of sight, we shoot it.
+						grid.get_mut(coords_possible_target).unwrap().obj = Obj::Empty;
+						break;
+					}
+					if grid.get(coords_possible_target).is_none()
+						|| grid
+							.get(coords_possible_target)
+							.is_some_and(|cell| !matches!(cell.obj, Obj::Empty))
+					{
+						// View is blocked by some non-targettable object.
+						break;
+					}
+				}
+			}
+		}
+	}
+}
+
 fn towers_move(grid: &mut Grid<Cell>) {
 	for coords in grid.dims.iter() {
 		if grid.get(coords).is_some_and(|cell| {
@@ -708,6 +782,9 @@ fn parse_tile(tile_string: [char; 2]) -> Cell {
 		'g' => Obj::Goal,
 		'r' => Obj::Rock,
 		'T' => Obj::Tree,
+		'^' => Obj::Flower { variant: Flower::BlueFlower },
+		'!' => Obj::Flower { variant: Flower::TheOther },
+		'f' => Obj::Flower { variant: Flower::TheOtherOther },
 		_ => panic!(
 			"Obwect fowmat '{}{}' incowect >w<",
 			tile_string[0], tile_string[1]
@@ -962,11 +1039,12 @@ fn main() {
 				player_move(&mut level, dxdy, action);
 				if !level.game_joever {
 					enemies_move(&mut level.grid);
-					bomb_move(&mut level.grid);
 					level.game_joever = is_game_joever(&level.grid);
 					if level.game_joever {
 						return;
 					}
+					bomb_move(&mut level.grid);
+					flowers_move(&mut level.grid);
 					towers_move(&mut level.grid);
 					level.turn += 1;
 					apply_events(&mut level);
@@ -1033,6 +1111,7 @@ fn main() {
 					Obj::Bomb { .. } => unimplemented!(),
 					Obj::Flower { variant: Flower::BlueFlower } => Some((6, 2)),
 					Obj::Flower { variant: Flower::TheOther } => Some((7, 2)),
+					Obj::Flower { variant: Flower::TheOtherOther } => Some((7, 4)),
 					Obj::Rock => Some((8, 2)),
 					Obj::Tree => Some((9, 2)),
 				};
